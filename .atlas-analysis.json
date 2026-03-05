@@ -1,0 +1,97 @@
+{
+  "projectType": "infrastructure",
+  "projectName": "UMA CTF Adapter",
+  "projectDescription": "Adapter contract to resolve Polymarket prediction markets via UMA's Optimistic Oracle.",
+  "theme": "aspen",
+  "primaryColor": "#94cb04",
+  "lightColor": "#545454",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "architecture", "quickstart"]
+          },
+          {
+            "group": "Deployment",
+            "pages": ["deployment/setup", "deployment/configuration", "deployment/deployments"]
+          },
+          {
+            "group": "Integration",
+            "pages": ["integration/initializing-markets", "integration/resolving-markets", "integration/handling-disputes"]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Contract",
+            "pages": ["api/umactfadapter", "api/question-data"]
+          },
+          {
+            "group": "Interfaces",
+            "pages": ["api/interfaces/iumactfadapter", "api/interfaces/iconditional-tokens", "api/interfaces/ioptimistic-oracle"]
+          },
+          {
+            "group": "Libraries",
+            "pages": ["api/libraries/ancillary-data", "api/libraries/payout-helper", "api/libraries/transfer-helper"]
+          },
+          {
+            "group": "Events & Errors",
+            "pages": ["api/events", "api/errors"]
+          }
+        ]
+      },
+      {
+        "tab": "Operations",
+        "groups": [
+          {
+            "group": "Administration",
+            "pages": ["operations/admin-functions", "operations/access-control", "operations/emergency-procedures"]
+          },
+          {
+            "group": "Market Lifecycle",
+            "pages": ["operations/market-states", "operations/dispute-handling", "operations/manual-resolution"]
+          },
+          {
+            "group": "Monitoring",
+            "pages": ["operations/monitoring-events", "operations/troubleshooting"]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Optimistic Oracle Integration",
+    "Conditional Tokens Framework Support",
+    "Automatic Dispute Reset Mechanism",
+    "Manual Resolution Safeguards",
+    "Flexible Reward & Bond Configuration",
+    "Admin Access Control",
+    "Question Pause/Unpause Controls",
+    "OpenZeppelin Audited"
+  ],
+  "publicApiSurface": [
+    "initialize(bytes,address,uint256,uint256,uint256)",
+    "resolve(bytes32)",
+    "ready(bytes32)",
+    "getExpectedPayouts(bytes32)",
+    "getQuestion(bytes32)",
+    "isInitialized(bytes32)",
+    "isFlagged(bytes32)",
+    "flag(bytes32)",
+    "unflag(bytes32)",
+    "reset(bytes32)",
+    "resolveManually(bytes32,uint256[])",
+    "pause(bytes32)",
+    "unpause(bytes32)",
+    "addAdmin(address)",
+    "removeAdmin(address)",
+    "renounceAdmin()",
+    "isAdmin(address)"
+  ]
+}
