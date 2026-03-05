@@ -357,6 +357,72 @@ Collateral whitelist contract that validates acceptable reward tokens.
 
 ---
 
+## Bulletin Board Functions
+
+The adapter inherits from the `BulletinBoard` mixin, which provides functions for posting and retrieving updates about questions.
+
+### postUpdate
+
+Post an update for a question. Anyone can post updates, but users should only consider updates posted by the question creator.
+
+```solidity
+function postUpdate(bytes32 questionID, bytes memory update) external
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID to post an update for.
+</ParamField>
+
+<ParamField path="update" type="bytes" required>
+  The update content to post.
+</ParamField>
+
+**Emits:** `AncillaryDataUpdated(bytes32 indexed questionID, address indexed owner, bytes update)`
+
+---
+
+### getUpdates
+
+Gets all updates for a questionID posted by a specific owner.
+
+```solidity
+function getUpdates(bytes32 questionID, address owner) public view returns (AncillaryDataUpdate[] memory)
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID.
+</ParamField>
+
+<ParamField path="owner" type="address" required>
+  The address of the question initializer who posted the updates.
+</ParamField>
+
+**Returns:**
+- `AncillaryDataUpdate[]`: Array of all updates with timestamp and content.
+
+---
+
+### getLatestUpdate
+
+Gets the latest update for a questionID posted by a specific owner.
+
+```solidity
+function getLatestUpdate(bytes32 questionID, address owner) external view returns (AncillaryDataUpdate memory)
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID.
+</ParamField>
+
+<ParamField path="owner" type="address" required>
+  The address of the question initializer who posted the updates.
+</ParamField>
+
+**Returns:**
+- `AncillaryDataUpdate`: The most recent update, or an empty update if none exist.
+
+---
+
 ## Events
 
 The contract emits the following events:
