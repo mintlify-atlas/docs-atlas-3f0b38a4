@@ -1,0 +1,139 @@
+---
+title: Development Setup
+description: Set up your development environment to build and test the UMA CTF Adapter
+---
+
+This guide walks you through setting up your development environment for the UMA CTF Adapter project.
+
+## Prerequisites
+
+The UMA CTF Adapter uses [Foundry](https://github.com/foundry-rs/foundry/) as its development framework. Foundry is a fast, portable, and modular toolkit for Ethereum application development.
+
+### Install Foundry
+
+To install Foundry, run:
+
+```bash
+curl -L https://foundry.paradigm.xyz | bash
+foundryup
+```
+
+<Note>
+Foundry has daily updates. Run `foundryup` regularly to update `forge` and `cast` to the latest versions.
+</Note>
+
+## Clone the Repository
+
+Clone the repository with submodules:
+
+```bash
+git clone https://github.com/Polymarket/uma-ctf-adapter.git --recurse-submodules
+cd uma-ctf-adapter
+```
+
+<Warning>
+Make sure to use the `--recurse-submodules` flag to pull in all dependencies.
+</Warning>
+
+## Install Dependencies
+
+Update Forge dependencies:
+
+```bash
+forge update
+```
+
+This will install all required Solidity dependencies, including:
+- OpenZeppelin contracts
+- UMA Protocol contracts
+- Conditional Tokens Framework
+
+## Build Contracts
+
+Compile the smart contracts:
+
+```bash
+forge build
+```
+
+The build output will be written to the `out/` directory. The project is configured with the following compiler settings:
+
+- Solidity version: `0.8.15`
+- Optimizer runs: `1,000,000`
+- Gas reports enabled
+
+### Build Configuration
+
+The project's build configuration is defined in `foundry.toml`:
+
+```toml
+[profile.default]
+solc = "0.8.15"
+ffi = true
+fs_permissions = [{ access = "read", path = "./artifacts/"}]
+gas_reports = ["*"]
+out = "out"
+optimizer_runs = 1000000
+```
+
+## Run Tests
+
+Execute the test suite:
+
+```bash
+forge test
+```
+
+### Verbose Test Output
+
+For detailed stack traces when tests fail, use the `-vvv` flag:
+
+```bash
+forge test -vvv
+```
+
+Verbosity levels:
+- `-v`: Show test results
+- `-vv`: Show logs
+- `-vvv`: Show stack traces for failed tests
+- `-vvvv`: Show stack traces for all tests and setup
+- `-vvvvv`: Show full traces including internal calls
+
+### Fuzz Testing
+
+The project includes fuzz testing configuration:
+
+```toml
+[profile.default.fuzz]
+runs = 256
+
+[profile.intense.fuzz]
+runs = 10_000
+```
+
+Run intensive fuzz tests with:
+
+```bash
+FOUNDRY_PROFILE=intense forge test
+```
+
+## Verify Setup
+
+To verify your environment is correctly configured, run:
+
+```bash
+forge build && forge test
+```
+
+If both commands complete successfully, your development environment is ready.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/deployment/configuration">
+    Learn about constructor parameters and environment variables
+  </Card>
+  <Card title="Deploy Contract" icon="rocket" href="/deployment/deployments">
+    View official deployments and deploy to your own network
+  </Card>
+</CardGroup>

@@ -1,0 +1,223 @@
+---
+title: 'Dispute Handling'
+description: 'How the UMA CTF Adapter handles disputes and the priceDisputed callback mechanism'
+---
+
+## Overview
+
+When a price proposal on UMA's Optimistic Oracle is disputed, the UMA CTF Adapter automatically handles the dispute through the `priceDisputed()` callback. This mechanism ensures market integrity by resetting questions and requesting new price proposals when disputes occur.
+
+## The priceDisputed Callback
+
+The `priceDisputed()` function is an Optimistic Oracle callback defined at `UmaCtfAdapter.sol:163`. It's triggered automatically when:
+
+1. Someone proposes an answer to the market question
+2. A disputer challenges that proposal by posting a bond
+3. The Optimistic Oracle invokes the callback on this contract
+
+### Function Signature
+
+```solidity
+function priceDisputed(
+    bytes32,              // identifier (ignored)
+    uint256,              // timestamp (ignored) 
+    bytes memory ancillaryData,  // Used to derive questionID
+    uint256               // refund (ignored)
+) external onlyOptimisticOracle
+```
+
+**Security**: Only the Optimistic Oracle can call this function (enforced by `onlyOptimisticOracle` modifier).
+
+## Dispute Flow
+
+### Case 1: First Dispute (Normal Reset)
+
+When a question is disputed for the first time:
+
+```solidity
+// Check at UmaCtfAdapter.sol:175-178
+if (questionData.reset) {
+    questionData.refund = true;
+    return;
+}
+```
+
+**Steps**:
+
+1. **Derive questionID**: `keccak256(ancillaryData)` at line 164
+2. **Load question data**: Retrieve from storage mapping
+3. **Check if already resolved**: If `questionData.resolved == true`, refund reward and exit (lines 170-173)
+4. **Check reset flag**: If not previously reset, proceed with reset
+5. **Call `_reset()`**: Resets the question at line 182
+
+**What `_reset()` does** (`UmaCtfAdapter.sol:390`):
+
+- Updates `requestTimestamp` to current `block.timestamp`
+- Sets `reset = true` flag
+- Submits a new price request to the Optimistic Oracle
+- Emits `QuestionReset` event
+
+**Result**: The market gets a fresh price request with the same parameters (reward, bond, liveness) but a new timestamp.
+
+### Case 2: Second Dispute (Refund Mode)
+
+If a question that has already been reset is disputed again:
+
+```solidity
+// UmaCtfAdapter.sol:175-178
+if (questionData.reset) {
+    questionData.refund = true;
+    return;
+}
+```
+
+**Behavior**:
+- Sets `refund = true` flag
+- Does **not** submit another price request
+- Returns immediately
+
+**Important**: A question can only be automatically reset **once**. After the second dispute:
+- The `refund` flag ensures the creator gets their reward back
+- An admin must call `reset(questionID)` to send a new price request
+- This prevents infinite dispute loops
+
+### Case 3: Already Resolved
+
+If a dispute callback arrives after the question was already resolved (e.g., via `resolveManually()`):
+
+```solidity
+// UmaCtfAdapter.sol:170-173
+if (questionData.resolved) {
+    TransferHelper._transfer(questionData.rewardToken, questionData.creator, questionData.reward);
+    return;
+}
+```
+
+**Behavior**:
+- Refunds the reward to the question creator immediately
+- Does not modify any state
+- Returns without further action
+
+**Why this matters**: Prevents state corruption when manual resolution happens during a dispute resolution window.
+
+## Reset Behavior Details
+
+### New Price Request Parameters
+
+When `_reset()` is called (lines 390-411), it:
+
+1. **Updates timestamp**: `questionData.requestTimestamp = block.timestamp`
+2. **Marks as reset**: `questionData.reset = true`
+3. **Conditionally resets refund**: If `resetRefund == true`, sets `refund = false`
+4. **Requests new price**: Calls `_requestPrice()` with:
+   - **Same ancillary data**: The question itself doesn't change
+   - **Same reward**: `questionData.reward`
+   - **Same proposal bond**: `questionData.proposalBond`
+   - **Same liveness**: `questionData.liveness`
+   - **New timestamp**: `block.timestamp`
+
+### Who Pays for Reset?
+
+The `requestor` parameter determines who funds the new price request:
+
+- **Automatic reset (dispute callback)**: `requestor = address(this)` - the adapter pays from refunded rewards
+- **Admin manual reset**: `requestor = msg.sender` - the admin pays
+
+See `_requestPrice()` logic at lines 350-361.
+
+## Admin Manual Reset
+
+If the `priceDisputed()` callback fails or a question needs resetting after two disputes:
+
+```solidity
+function reset(bytes32 questionID) external onlyAdmin
+```
+
+**Requirements**:
+- Question must be initialized
+- Question must **not** be resolved
+
+**Process** (lines 241-251):
+1. Check if refund is needed
+2. If `refund == true`, refund the reward to creator
+3. Call `_reset()` with `resetRefund = true` to clear the refund flag
+4. Admin (caller) pays for the new price request
+
+**Use case**: Failsafe when automatic dispute handling fails or after multiple disputes.
+
+## Refund Mechanics
+
+The `refund` flag controls when rewards should be returned to the question creator:
+
+### When Refund is Set
+
+1. **Second dispute**: Set in `priceDisputed()` at line 176
+2. **Ignored price**: Set during `_reset()` when Oracle returns ignore price (line 423)
+
+### When Refund is Executed
+
+Refund happens at resolution:
+
+1. **Automatic resolution**: `_resolve()` checks and refunds at lines 430-431
+2. **Manual resolution**: `resolveManually()` checks and refunds at line 267
+3. **Manual reset**: `reset()` checks and refunds at line 247
+
+**Refund function** (line 447):
+```solidity
+function _refund(QuestionData storage questionData) internal {
+    return TransferHelper._transfer(
+        questionData.rewardToken, 
+        questionData.creator, 
+        questionData.reward
+    );
+}
+```
+
+## Events
+
+**QuestionReset** event is emitted when a question is reset:
+```solidity
+event QuestionReset(bytes32 indexed questionID);
+```
+
+Monitor this event to track when markets are disputed and reset.
+
+## Edge Cases
+
+### Race Condition: Manual Resolution During Dispute
+
+If an admin manually resolves a question while a dispute is being processed:
+
+1. `resolveManually()` sets `resolved = true`
+2. Later, `priceDisputed()` callback executes
+3. Callback detects `resolved == true`
+4. Reward is refunded, no state changes
+
+This is safe and prevents double-spending or state corruption.
+
+### Ignore Price After Dispute
+
+If the Optimistic Oracle returns the "ignore price" (`type(int256).min`) after a reset:
+
+```solidity
+// UmaCtfAdapter.sol:423
+if (price == _ignorePrice()) return _reset(address(this), questionID, true, questionData);
+```
+
+The question is reset again automatically, and `refund = true` is set.
+
+## Integration Guidelines
+
+1. **Listen for QuestionReset events**: Track when markets are disputed
+2. **Monitor the reset flag**: Check if `getQuestion(questionID).reset == true`
+3. **Handle refund scenarios**: If `refund == true`, expect reward to be returned on resolution
+4. **Multiple resets require admin**: After automatic reset, only admins can reset again
+5. **New timestamp after reset**: Use updated `requestTimestamp` to query the Optimistic Oracle
+
+## Code References
+
+- **priceDisputed callback**: `UmaCtfAdapter.sol:163`
+- **_reset function**: `UmaCtfAdapter.sol:390`
+- **Admin reset**: `UmaCtfAdapter.sol:241`
+- **Refund logic**: `UmaCtfAdapter.sol:447`
+- **Reset limit check**: `UmaCtfAdapter.sol:175`

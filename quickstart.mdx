@@ -1,80 +1,268 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: 'Quickstart'
+description: 'Deploy the UMA CTF Adapter and initialize your first prediction market'
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
+Before you begin, ensure you have:
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Foundry Installed" icon="hammer">
+    Install from [getfoundry.sh](https://getfoundry.sh)
+  </Card>
+  <Card title="Contract Addresses" icon="map-pin">
+    UMA contract addresses for your target network
+  </Card>
+  <Card title="Whitelisted Token" icon="coins">
+    An ERC20 token approved by UMA's CollateralWhitelist
+  </Card>
+  <Card title="RPC Endpoint" icon="server">
+    Access to an Ethereum/Polygon RPC provider
+  </Card>
 </CardGroup>
 
+## Installation
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the UMA CTF Adapter repository with submodules:
+    
+    ```bash
+    git clone https://github.com/Polymarket/uma-ctf-adapter.git --recurse-submodules
+    cd uma-ctf-adapter
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Update Forge dependencies:
+    
+    ```bash
+    forge update
+    ```
+  </Step>
+
+  <Step title="Build contracts">
+    Compile the contracts:
+    
+    ```bash
+    forge build
+    ```
+  </Step>
+
+  <Step title="Run tests">
+    Verify everything works:
+    
+    ```bash
+    forge test
+    ```
+  </Step>
+</Steps>
+
+## Deploy the Adapter
+
+You can deploy the adapter using either the provided deployment script or manually.
+
+<Tabs>
+  <Tab title="Using Deploy Script">
+    Create a `.env` file with your configuration:
+    
+    ```bash .env
+    RPC_URL=https://polygon-rpc.com
+    PRIVATE_KEY=your_private_key_here
+    CTF_ADDRESS=0x...
+    FINDER_ADDRESS=0x...
+    OO_ADDRESS=0x...
+    ```
+
+    Run the deployment script:
+    
+    ```bash
+    source deploy/scripts/deploy_adapter.sh
+    ```
+  </Tab>
+
+  <Tab title="Manual Deployment">
+    Use Forge to deploy directly:
+    
+    ```bash
+    forge create src/UmaCtfAdapter.sol:UmaCtfAdapter \
+      --rpc-url $RPC_URL \
+      --private-key $PRIVATE_KEY \
+      --constructor-args <CTF_ADDRESS> <FINDER_ADDRESS> <OO_ADDRESS>
+    ```
+  </Tab>
+</Tabs>
+
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+For production deployments on Polygon, see the [official deployments](/deployment/deployments) page for verified contract addresses.
 </Note>
+
+## Initialize Your First Market
+
+Once deployed, you can initialize a prediction market question.
+
+<Steps>
+  <Step title="Prepare ancillary data">
+    Create the question text in a format compatible with UMA:
+    
+    ```solidity
+    bytes memory ancillaryData = bytes("Q: Will ETH be above $2000 on Jan 1, 2025? A: 1 for yes, 0 for no.");
+    ```
+  </Step>
+
+  <Step title="Choose market parameters">
+    Select appropriate parameters for your market:
+    
+    - **rewardToken**: Address of whitelisted ERC20 (e.g., USDC)
+    - **reward**: Amount to reward the proposer (e.g., 100 USDC)
+    - **proposalBond**: Bond required from proposers (0 = use default)
+    - **liveness**: Time before proposal is finalized (0 = use 2 hour default)
+    
+    <Warning>
+    Reward and bond amounts should be sized appropriately based on the value at risk in your market. Higher value markets need higher rewards and bonds.
+    </Warning>
+  </Step>
+
+  <Step title="Call initialize">
+    Initialize the market on the adapter:
+    
+    <CodeGroup>
+    
+    ```solidity Solidity
+    bytes32 questionID = adapter.initialize(
+        ancillaryData,
+        address(usdc),           // rewardToken
+        100 * 10**6,             // reward (100 USDC)
+        0,                       // proposalBond (use default)
+        0                        // liveness (use 2 hour default)
+    );
+    ```
+    
+    ```javascript JavaScript (ethers.js)
+    const ancillaryData = ethers.utils.toUtf8Bytes(
+      "Q: Will ETH be above $2000 on Jan 1, 2025? A: 1 for yes, 0 for no."
+    );
+    
+    const tx = await adapter.initialize(
+      ancillaryData,
+      usdcAddress,
+      ethers.utils.parseUnits("100", 6), // 100 USDC
+      0, // use default bond
+      0  // use default liveness
+    );
+    
+    const receipt = await tx.wait();
+    const event = receipt.events.find(e => e.event === 'QuestionInitialized');
+    const questionID = event.args.questionID;
+    
+    console.log("Question initialized:", questionID);
+    ```
+    
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Monitor Your Market
+
+After initialization, you can check the market status:
+
+```javascript
+// Check if market is ready to resolve
+const isReady = await adapter.ready(questionID);
+
+// Get question data
+const questionData = await adapter.getQuestion(questionID);
+console.log("Request timestamp:", questionData.requestTimestamp);
+console.log("Reward:", questionData.reward);
+console.log("Resolved:", questionData.resolved);
+```
+
+## Resolve Your Market
+
+Once the Optimistic Oracle has a price available (after the liveness period):
+
+```javascript
+// Check if ready to resolve
+const ready = await adapter.ready(questionID);
+
+if (ready) {
+  // Anyone can call resolve
+  const tx = await adapter.resolve(questionID);
+  await tx.wait();
+  
+  console.log("Market resolved!");
+}
+```
+
+## Testing Locally
+
+For local development and testing, use Foundry's built-in testing framework:
+
+```solidity test/YourTest.t.sol
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.15;
+
+import "forge-std/Test.sol";
+import "../src/UmaCtfAdapter.sol";
+
+contract AdapterTest is Test {
+    UmaCtfAdapter adapter;
+    
+    function setUp() public {
+        adapter = new UmaCtfAdapter(ctfAddress, finderAddress, ooAddress);
+    }
+    
+    function testInitialize() public {
+        bytes memory data = bytes("Q: Test question?");
+        bytes32 questionID = adapter.initialize(
+            data,
+            address(token),
+            100e6,
+            0,
+            0
+        );
+        
+        assertTrue(adapter.isInitialized(questionID));
+    }
+}
+```
+
+Run your tests:
+
+```bash
+forge test -vvv
+```
+
+## Common Issues
+
+<AccordionGroup>
+  <Accordion title="UnsupportedToken error">
+    The reward token must be on UMA's CollateralWhitelist. Check the [Configuration](/deployment/configuration) page for approved tokens on your network.
+  </Accordion>
+  
+  <Accordion title="InvalidAncillaryData error">
+    Ancillary data must be non-empty and less than 8139 bytes after the initializer address is appended.
+  </Accordion>
+  
+  <Accordion title="Initialized error">
+    Each unique ancillary data string (including appended initializer address) can only be used once. Use different question text for each market.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Learn the Architecture" icon="diagram-project" href="/architecture">
+    Understand how the adapter works under the hood
+  </Card>
+  <Card title="Integration Guide" icon="code" href="/integration/initializing-markets">
+    Deep dive into market initialization parameters
+  </Card>
+  <Card title="API Reference" icon="book" href="/api/umactfadapter">
+    Explore the complete contract API
+  </Card>
+  <Card title="Admin Operations" icon="user-shield" href="/operations/admin-functions">
+    Learn about administrative controls
+  </Card>
+</CardGroup>

@@ -1,0 +1,148 @@
+---
+title: TransferHelper
+description: Helper library for safe ERC20 token transfers
+---
+
+## Overview
+
+`TransferHelper` is a utility library that provides safe wrapper functions for ERC20 token transfers. It uses Solmate's `SafeTransferLib` to ensure secure token operations.
+
+**Source:** `src/libraries/TransferHelper.sol`
+
+## Dependencies
+
+```solidity
+import { SafeTransferLib, ERC20 } from "lib/solmate/src/utils/SafeTransferLib.sol";
+```
+
+This library wraps [Solmate's SafeTransferLib](https://github.com/transmissions11/solmate) for safe ERC20 operations.
+
+## Functions
+
+### _transferFromERC20
+
+```solidity
+function _transferFromERC20(
+    address token,
+    address from,
+    address to,
+    uint256 amount
+) internal
+```
+
+Transfers tokens from a specified address to a destination address.
+
+**Parameters:**
+
+- `token` (address): The contract address of the ERC20 token to transfer
+- `from` (address): The originating address from which tokens will be transferred
+- `to` (address): The destination address for the transfer
+- `amount` (uint256): The amount of tokens to transfer
+
+**Requirements:**
+
+- The caller must have approval to spend `amount` tokens from the `from` address
+- The `from` address must have sufficient balance
+
+**Safety Features:**
+
+- Automatically handles tokens with non-standard return values
+- Reverts on failed transfers
+- Gas-optimized implementation via Solmate
+
+---
+
+### _transfer
+
+```solidity
+function _transfer(
+    address token,
+    address to,
+    uint256 amount
+) internal
+```
+
+Transfers tokens from the current contract to a destination address.
+
+**Parameters:**
+
+- `token` (address): The contract address of the ERC20 token to transfer
+- `to` (address): The destination address for the transfer
+- `amount` (uint256): The amount of tokens to transfer
+
+**Requirements:**
+
+- The contract must have sufficient balance of the token
+
+**Safety Features:**
+
+- Automatically handles tokens with non-standard return values
+- Reverts on failed transfers
+- Gas-optimized implementation via Solmate
+
+## Usage Example
+
+```solidity
+import { TransferHelper } from "./libraries/TransferHelper.sol";
+
+contract Example {
+    using TransferHelper for *;
+    
+    // Transfer tokens from a user to this contract
+    function depositTokens(
+        address token,
+        address user,
+        uint256 amount
+    ) external {
+        TransferHelper._transferFromERC20(
+            token,
+            user,
+            address(this),
+            amount
+        );
+    }
+    
+    // Transfer tokens from this contract to a user
+    function withdrawTokens(
+        address token,
+        address user,
+        uint256 amount
+    ) external {
+        TransferHelper._transfer(
+            token,
+            user,
+            amount
+        );
+    }
+}
+```
+
+## Why Use TransferHelper?
+
+### Handles Non-Standard ERC20 Tokens
+
+Some ERC20 tokens don't follow the standard specification:
+
+- Tokens that don't return a boolean on `transfer` or `transferFrom`
+- Tokens that revert on failure instead of returning false
+- Tokens with missing return values
+
+`TransferHelper` (via `SafeTransferLib`) handles all these cases safely.
+
+### Gas Optimization
+
+Solmate's `SafeTransferLib` is highly gas-optimized compared to OpenZeppelin's `SafeERC20`, making it ideal for production use.
+
+### Consistent Interface
+
+Provides a uniform interface for token transfers across the UMA CTF Adapter codebase.
+
+## Security Considerations
+
+<Warning>
+  Always ensure proper access control when using these transfer functions. They should typically be called from protected functions to prevent unauthorized token transfers.
+</Warning>
+
+<Note>
+  These functions will revert if the transfer fails for any reason (insufficient balance, insufficient allowance, etc.). Always handle these cases appropriately in your calling code.
+</Note>

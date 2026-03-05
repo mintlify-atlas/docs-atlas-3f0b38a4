@@ -1,0 +1,300 @@
+---
+title: IUmaCtfAdapter
+description: Interface for the UMA CTF Adapter contract
+---
+
+The `IUmaCtfAdapter` interface defines the main contract interface for interacting with the UMA CTF Adapter, which bridges UMA's Optimistic Oracle with Gnosis Conditional Tokens Framework.
+
+## Structs
+
+### QuestionData
+
+Contains all metadata and state for a question/market.
+
+```solidity
+struct QuestionData {
+    uint256 requestTimestamp;
+    uint256 reward;
+    uint256 proposalBond;
+    uint256 liveness;
+    uint256 manualResolutionTimestamp;
+    bool resolved;
+    bool paused;
+    bool reset;
+    bool refund;
+    address rewardToken;
+    address creator;
+    bytes ancillaryData;
+}
+```
+
+#### Fields
+
+- `requestTimestamp` - Request timestamp, set when a request is made to the Optimistic Oracle. Used to identify the request and NOT used by the DVM to determine validity.
+- `reward` - Reward offered to a successful proposer.
+- `proposalBond` - Additional bond required by Optimistic oracle proposers/disputers.
+- `liveness` - Custom liveness period.
+- `manualResolutionTimestamp` - Manual resolution timestamp, set when a market is flagged for manual resolution.
+- `resolved` - Flag marking whether a question is resolved.
+- `paused` - Flag marking whether a question is paused.
+- `reset` - Flag marking whether a question has been reset. A question can only be reset once.
+- `refund` - Flag marking whether a question's reward should be refunded.
+- `rewardToken` - ERC20 token address used for payment of rewards, proposal bonds and fees.
+- `creator` - The address of the question creator.
+- `ancillaryData` - Data used to resolve a condition.
+
+## Functions
+
+### initialize
+
+Initializes a new question and makes a price request to the Optimistic Oracle.
+
+```solidity
+function initialize(
+    bytes memory ancillaryData,
+    address rewardToken,
+    uint256 reward,
+    uint256 proposalBond,
+    uint256 liveness
+) external returns (bytes32);
+```
+
+#### Parameters
+
+- `ancillaryData` - Data used to resolve a condition.
+- `rewardToken` - ERC20 token address used for payment of rewards, proposal bonds and fees.
+- `reward` - Reward offered to a successful proposer.
+- `proposalBond` - Additional bond required by Optimistic oracle proposers/disputers.
+- `liveness` - Custom liveness period for the request.
+
+#### Returns
+
+- `bytes32` - The question ID.
+
+### ready
+
+Checks if a question is ready to be resolved.
+
+```solidity
+function ready(bytes32 questionID) external view returns (bool);
+```
+
+#### Parameters
+
+- `questionID` - The ID of the question to check.
+
+#### Returns
+
+- `bool` - True if the question is ready to be resolved.
+
+### resolve
+
+Resolves a question and reports the payout to the Conditional Tokens contract.
+
+```solidity
+function resolve(bytes32 questionID) external;
+```
+
+#### Parameters
+
+- `questionID` - The ID of the question to resolve.
+
+### flag
+
+Flags a question for manual resolution by an admin.
+
+```solidity
+function flag(bytes32 questionID) external;
+```
+
+#### Parameters
+
+- `questionID` - The ID of the question to flag.
+
+### reset
+
+Resets a question, allowing it to be re-initialized. A question can only be reset once.
+
+```solidity
+function reset(bytes32 questionID) external;
+```
+
+#### Parameters
+
+- `questionID` - The ID of the question to reset.
+
+### pause
+
+Pauses a question, preventing resolution.
+
+```solidity
+function pause(bytes32 questionID) external;
+```
+
+#### Parameters
+
+- `questionID` - The ID of the question to pause.
+
+### unpause
+
+Unpauses a previously paused question.
+
+```solidity
+function unpause(bytes32 questionID) external;
+```
+
+#### Parameters
+
+- `questionID` - The ID of the question to unpause.
+
+### getQuestion
+
+Retrieves the question data for a given question ID.
+
+```solidity
+function getQuestion(bytes32 questionID) external returns (QuestionData memory);
+```
+
+#### Parameters
+
+- `questionID` - The ID of the question to retrieve.
+
+#### Returns
+
+- `QuestionData` - The question data struct.
+
+## Events
+
+### QuestionInitialized
+
+Emitted when a questionID is initialized.
+
+```solidity
+event QuestionInitialized(
+    bytes32 indexed questionID,
+    uint256 indexed requestTimestamp,
+    address indexed creator,
+    bytes ancillaryData,
+    address rewardToken,
+    uint256 reward,
+    uint256 proposalBond
+);
+```
+
+### QuestionPaused
+
+Emitted when a question is paused by an authorized user.
+
+```solidity
+event QuestionPaused(bytes32 indexed questionID);
+```
+
+### QuestionUnpaused
+
+Emitted when a question is unpaused by an authorized user.
+
+```solidity
+event QuestionUnpaused(bytes32 indexed questionID);
+```
+
+### QuestionFlagged
+
+Emitted when a question is flagged by an admin for manual resolution.
+
+```solidity
+event QuestionFlagged(bytes32 indexed questionID);
+```
+
+### QuestionUnflagged
+
+Emitted when a question is unflagged by an admin.
+
+```solidity
+event QuestionUnflagged(bytes32 indexed questionID);
+```
+
+### QuestionReset
+
+Emitted when a question is reset.
+
+```solidity
+event QuestionReset(bytes32 indexed questionID);
+```
+
+### QuestionResolved
+
+Emitted when a question is resolved.
+
+```solidity
+event QuestionResolved(bytes32 indexed questionID, int256 indexed settledPrice, uint256[] payouts);
+```
+
+### QuestionManuallyResolved
+
+Emitted when a question is manually resolved.
+
+```solidity
+event QuestionManuallyResolved(bytes32 indexed questionID, uint256[] payouts);
+```
+
+## Errors
+
+### NotInitialized
+
+Thrown when attempting to operate on a question that hasn't been initialized.
+
+### NotFlagged
+
+Thrown when attempting to perform an operation that requires the question to be flagged.
+
+### NotReadyToResolve
+
+Thrown when attempting to resolve a question that is not yet ready.
+
+### Resolved
+
+Thrown when attempting to operate on a question that has already been resolved.
+
+### Initialized
+
+Thrown when attempting to initialize a question that has already been initialized.
+
+### UnsupportedToken
+
+Thrown when using an unsupported reward token.
+
+### Flagged
+
+Thrown when attempting to operate on a question that has been flagged.
+
+### Paused
+
+Thrown when attempting to operate on a paused question.
+
+### SafetyPeriodPassed
+
+Thrown when the safety period has passed.
+
+### SafetyPeriodNotPassed
+
+Thrown when attempting an operation before the safety period has passed.
+
+### PriceNotAvailable
+
+Thrown when the price is not available from the Optimistic Oracle.
+
+### InvalidAncillaryData
+
+Thrown when invalid ancillary data is provided.
+
+### NotOptimisticOracle
+
+Thrown when caller is not the Optimistic Oracle.
+
+### InvalidOOPrice
+
+Thrown when the Optimistic Oracle returns an invalid price.
+
+### InvalidPayouts
+
+Thrown when invalid payout values are provided.

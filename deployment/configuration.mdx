@@ -1,0 +1,220 @@
+---
+title: Configuration
+description: Configure the UMA CTF Adapter with constructor parameters and environment variables
+---
+
+The UMA CTF Adapter requires specific configuration parameters to interact with the Conditional Tokens Framework and UMA's Optimistic Oracle.
+
+## Constructor Parameters
+
+The `UmaCtfAdapter` contract takes three constructor parameters:
+
+```solidity src/UmaCtfAdapter.sol
+constructor(address _ctf, address _finder, address _oo) {
+    ctf = IConditionalTokens(_ctf);
+    IFinder finder = IFinder(_finder);
+    optimisticOracle = IOptimisticOracleV2(_oo);
+    collateralWhitelist = IAddressWhitelist(finder.getImplementationAddress("CollateralWhitelist"));
+}
+```
+
+### Parameters
+
+<ParamField path="_ctf" type="address" required>
+  The Conditional Token Framework contract address
+  
+  <Note>
+  When deploying for negative risk markets, this should be the `NegRiskOperator` contract address instead of the standard CTF contract.
+  </Note>
+</ParamField>
+
+<ParamField path="_finder" type="address" required>
+  The UMA Finder contract address
+  
+  The Finder is UMA's registry contract that stores addresses of all UMA protocol contracts. The adapter uses it to locate the `CollateralWhitelist`.
+</ParamField>
+
+<ParamField path="_oo" type="address" required>
+  The UMA Optimistic Oracle V2 contract address
+  
+  This is the oracle that provides resolution data for markets.
+</ParamField>
+
+## Environment Variables
+
+Create a `.env` file in the project root for deployment configuration:
+
+```bash .env.example
+PK=
+CTF=
+FINDER=
+OPTIMISTIC_ORACLE=
+RPC_URL=
+ETHERSCAN_API_KEY=
+```
+
+### Variable Descriptions
+
+<ParamField path="PK" type="string" required>
+  Private key of the deployer account
+  
+  <Warning>
+  Never commit your private key to version control. Keep your `.env` file secure.
+  </Warning>
+</ParamField>
+
+<ParamField path="ADMIN" type="address" required>
+  Address that will be granted admin privileges
+  
+  The admin can pause/unpause markets, flag markets for manual resolution, and perform emergency functions.
+</ParamField>
+
+<ParamField path="CTF" type="address" required>
+  Conditional Tokens Framework contract address
+  
+  Same as the `_ctf` constructor parameter.
+</ParamField>
+
+<ParamField path="FINDER" type="address" required>
+  UMA Finder contract address
+  
+  Same as the `_finder` constructor parameter.
+</ParamField>
+
+<ParamField path="OPTIMISTIC_ORACLE" type="address" required>
+  UMA Optimistic Oracle V2 contract address
+  
+  Same as the `_oo` constructor parameter.
+</ParamField>
+
+<ParamField path="RPC_URL" type="string" required>
+  RPC endpoint for the target network
+  
+  Examples:
+  - Polygon: `https://polygon-rpc.com`
+  - Mumbai: `https://rpc-mumbai.maticvigil.com`
+</ParamField>
+
+<ParamField path="ETHERSCAN_API_KEY" type="string">
+  API key for contract verification
+  
+  Used to verify contracts on Polygonscan or other block explorers.
+</ParamField>
+
+## UMA Contract Addresses
+
+The UMA protocol maintains deployments on various networks. You'll need the following contract addresses:
+
+### Required UMA Contracts
+
+<AccordionGroup>
+  <Accordion title="Finder">
+    The Finder contract is UMA's central registry. All other UMA contract addresses can be discovered through the Finder.
+    
+    The adapter uses the Finder to locate:
+    - `CollateralWhitelist`: List of approved collateral tokens
+    - `OptimisticOracleV2`: The oracle contract (also passed directly to constructor)
+  </Accordion>
+
+  <Accordion title="OptimisticOracleV2">
+    The Optimistic Oracle V2 is UMA's oracle that enables markets to resolve via optimistic dispute resolution.
+    
+    Key features:
+    - Proposers submit resolution data
+    - 2-hour default liveness period for disputes
+    - Falls back to DVM if disputes occur
+  </Accordion>
+
+  <Accordion title="CollateralWhitelist">
+    Retrieved automatically via the Finder. Lists approved ERC20 tokens that can be used for:
+    - Reward payments to proposers
+    - Bond requirements for proposals/disputes
+    
+    Common whitelisted tokens include USDC, DAI, and WETH.
+  </Accordion>
+</AccordionGroup>
+
+### Finding UMA Addresses
+
+Refer to UMA's official documentation for contract addresses on your target network:
+
+- [UMA Protocol Documentation](https://docs.umaproject.org/)
+- [UMA Deployed Contracts](https://docs.umaproject.org/resources/network-addresses)
+
+<Tip>
+Once you have the Finder address, you can query other UMA contract addresses programmatically:
+
+```solidity
+address optimisticOracle = finder.getImplementationAddress("OptimisticOracleV2");
+address collateralWhitelist = finder.getImplementationAddress("CollateralWhitelist");
+```
+</Tip>
+
+## Deployment Script
+
+The repository includes a deployment script at `deploy/scripts/deploy_adapter.sh`:
+
+```bash deploy/scripts/deploy_adapter.sh
+#!/usr/bin/env bash
+
+source .env
+
+echo "Deploying UmaCtfAdapter..."
+
+echo "Deploy args:
+Admin: $ADMIN
+ConditionalTokensFramework: $CTF
+Finder: $FINDER
+OptimisticOracle: $OPTIMISTIC_ORACLE
+"
+
+OUTPUT="$(forge script DeployAdapter \
+    --private-key $PK \
+    --rpc-url $RPC_URL \
+    --json \
+    --broadcast \
+    -s "deployAdapter(address,address,address,address)" $ADMIN $CTF $FINDER $OPTIMISTIC_ORACLE)"
+
+ADAPTER=$(echo "$OUTPUT" | grep "{" | jq -r .returns.adapter.value)
+echo "Adapter deployed: $ADAPTER"
+
+echo "Complete!"
+```
+
+The script:
+1. Loads environment variables from `.env`
+2. Displays deployment parameters
+3. Deploys the adapter using Forge
+4. Extracts and displays the deployed adapter address
+
+## Constants
+
+The adapter includes several important constants:
+
+```solidity src/UmaCtfAdapter.sol
+/// @notice Time period after which an admin can manually resolve a condition
+uint256 public constant SAFETY_PERIOD = 1 hours;
+
+/// @notice Unique query identifier for the Optimistic Oracle
+/// From UMIP-107
+bytes32 public constant YES_OR_NO_IDENTIFIER = "YES_OR_NO_QUERY";
+
+/// @notice Maximum ancillary data length
+/// From OOV2 function OO_ANCILLARY_DATA_LIMIT
+uint256 public constant MAX_ANCILLARY_DATA = 8139;
+```
+
+<Info>
+These constants are hardcoded and cannot be changed after deployment.
+</Info>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="View Deployments" icon="globe" href="/deployment/deployments">
+    See official deployments on Polygon, Mumbai, and Amoy
+  </Card>
+  <Card title="Initialize Markets" icon="play" href="/integration/initializing-markets">
+    Learn how to initialize prediction markets
+  </Card>
+</CardGroup>

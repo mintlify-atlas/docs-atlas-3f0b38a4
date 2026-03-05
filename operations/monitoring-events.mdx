@@ -1,0 +1,379 @@
+---
+title: 'Monitoring Events'
+description: 'Event monitoring, listeners, and data interpretation for the UMA CTF Adapter'
+---
+
+## Overview
+
+The UMA CTF Adapter emits events throughout the question lifecycle, from initialization to resolution. Monitoring these events is critical for:
+
+- Tracking question state changes
+- Detecting disputes and manual interventions
+- Auditing resolution outcomes
+- Building off-chain integrations and dashboards
+
+## Core Events
+
+### QuestionInitialized
+
+Emitted when a new question is created and submitted to the Optimistic Oracle.
+
+```solidity
+event QuestionInitialized(
+    bytes32 indexed questionID,
+    uint256 indexed requestTimestamp,
+    address indexed creator,
+    bytes ancillaryData,
+    address rewardToken,
+    uint256 reward,
+    uint256 proposalBond
+);
+```
+
+**Key Fields:**
+- `questionID` - Unique identifier (keccak256 hash of ancillary data)
+- `requestTimestamp` - Timestamp of the OO price request
+- `creator` - Address that initialized the question
+- `ancillaryData` - The question data with creator address appended
+- `rewardToken` - ERC20 token used for rewards/bonds
+- `reward` - Amount offered to successful proposers
+- `proposalBond` - Bond required from proposers/disputers
+
+**What to Monitor:**
+- Track new questions as they're created
+- Validate reward and bond amounts are economically secure
+- Record creator addresses for accountability
+- Store ancillary data for question interpretation
+
+**Example Listener (ethers.js):**
+
+```javascript
+const adapter = new ethers.Contract(adapterAddress, abi, provider);
+
+adapter.on('QuestionInitialized', (
+  questionID,
+  requestTimestamp,
+  creator,
+  ancillaryData,
+  rewardToken,
+  reward,
+  proposalBond,
+  event
+) => {
+  console.log('New question:', {
+    questionID,
+    creator,
+    reward: ethers.utils.formatUnits(reward, 18),
+    bond: ethers.utils.formatUnits(proposalBond, 18)
+  });
+});
+```
+
+### QuestionResolved
+
+Emitted when a question is resolved through the Optimistic Oracle.
+
+```solidity
+event QuestionResolved(
+    bytes32 indexed questionID,
+    int256 indexed settledPrice,
+    uint256[] payouts
+);
+```
+
+**Key Fields:**
+- `questionID` - The resolved question identifier
+- `settledPrice` - Price from OO (0, 0.5 ether, or 1 ether)
+- `payouts` - Array `[YES_payout, NO_payout]`
+
+**Price Interpretation:**
+- `0` → NO (payouts: `[0, 1]`)
+- `0.5 ether` → UNKNOWN/TIE (payouts: `[1, 1]`)
+- `1 ether` → YES (payouts: `[1, 0]`)
+
+**What to Monitor:**
+- Track resolution outcomes for market settlement
+- Detect unusual resolutions (e.g., ties)
+- Verify payout arrays match expected values
+- Trigger settlement flows in dependent systems
+
+### QuestionManuallyResolved
+
+Emitted when an admin resolves a question manually after flagging.
+
+```solidity
+event QuestionManuallyResolved(
+    bytes32 indexed questionID,
+    uint256[] payouts
+);
+```
+
+**What to Monitor:**
+- **Critical**: Manual resolutions bypass the Optimistic Oracle
+- Review all manual resolutions for governance compliance
+- Alert on unexpected manual interventions
+- Verify safety period (1 hour) was respected
+
+### QuestionReset
+
+Emitted when a question is reset, triggering a new OO price request.
+
+```solidity
+event QuestionReset(bytes32 indexed questionID);
+```
+
+**When This Occurs:**
+- OO price was disputed (`priceDisputed` callback)
+- OO returned the ignore price (`type(int256).min`)
+- Admin manually called `reset()` (failsafe)
+
+**What to Monitor:**
+- Multiple resets may indicate contentious questions
+- Track reset frequency per question (max 1 automatic reset)
+- Alert if reset occurs after dispute
+
+### QuestionFlagged / QuestionUnflagged
+
+Admin actions to flag questions for manual resolution.
+
+```solidity
+event QuestionFlagged(bytes32 indexed questionID);
+event QuestionUnflagged(bytes32 indexed questionID);
+```
+
+**What to Monitor:**
+- Flagging pauses automatic resolution
+- Sets `manualResolutionTimestamp` = `block.timestamp + 1 hour`
+- Unflagging only possible before safety period expires
+- Alert governance channels on flag events
+
+### QuestionPaused / QuestionUnpaused
+
+Admin controls to pause/resume resolution.
+
+```solidity
+event QuestionPaused(bytes32 indexed questionID);
+event QuestionUnpaused(bytes32 indexed questionID);
+```
+
+**What to Monitor:**
+- Paused questions cannot be resolved
+- Track pause duration for SLA monitoring
+- Distinguish from flagging (flagging also sets pause)
+
+## Setting Up Event Listeners
+
+### Using ethers.js
+
+```javascript
+import { ethers } from 'ethers';
+
+const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
+const adapter = new ethers.Contract(ADAPTER_ADDRESS, ABI, provider);
+
+// Listen to all events
+adapter.on('*', (event) => {
+  console.log('Event:', event.event, event.args);
+});
+
+// Listen to specific event
+adapter.on('QuestionResolved', async (questionID, settledPrice, payouts) => {
+  // Fetch full question data
+  const question = await adapter.getQuestion(questionID);
+  // Trigger settlement logic
+  await settleMarket(questionID, payouts);
+});
+```
+
+### Using Viem
+
+```typescript
+import { createPublicClient, parseAbiItem } from 'viem';
+
+const client = createPublicClient({
+  chain: mainnet,
+  transport: http()
+});
+
+const unwatch = client.watchEvent({
+  address: ADAPTER_ADDRESS,
+  event: parseAbiItem('event QuestionInitialized(bytes32 indexed questionID, uint256 indexed requestTimestamp, address indexed creator, bytes ancillaryData, address rewardToken, uint256 reward, uint256 proposalBond)'),
+  onLogs: logs => {
+    logs.forEach(log => {
+      console.log('Question initialized:', log.args.questionID);
+    });
+  }
+});
+```
+
+### Querying Historical Events
+
+```javascript
+// Get all resolutions in the last 1000 blocks
+const filter = adapter.filters.QuestionResolved();
+const events = await adapter.queryFilter(filter, -1000);
+
+events.forEach(event => {
+  const { questionID, settledPrice, payouts } = event.args;
+  console.log(`Resolved: ${questionID}, Price: ${settledPrice}`);
+});
+```
+
+## Best Practices
+
+### 1. Monitor All Lifecycle Events
+
+Track the complete flow:
+```
+QuestionInitialized → [QuestionPaused/Flagged?] → [QuestionReset?] → QuestionResolved/QuestionManuallyResolved
+```
+
+### 2. Set Up Alerts
+
+**High Priority:**
+- `QuestionFlagged` - Admin intervention required
+- `QuestionManuallyResolved` - Governance action taken
+- Multiple `QuestionReset` events for same questionID
+
+**Medium Priority:**
+- `QuestionPaused` - Resolution blocked
+- Resolution with `0.5 ether` price (tie/unknown)
+
+### 3. Correlate with Optimistic Oracle Events
+
+Monitor OO events for complete visibility:
+- `ProposePrice` - Someone proposed an answer
+- `DisputePrice` - Proposal was disputed
+- `Settle` - OO finalized the price
+
+### 4. Store Event Data
+
+Persist events to a database for:
+- Historical analysis
+- Dispute tracking
+- Performance metrics
+- Audit trails
+
+### 5. Handle Reorgs
+
+Implement reorg-safe event processing:
+```javascript
+const CONFIRMATIONS = 12;
+
+adapter.on('QuestionResolved', async (questionID, ...args) => {
+  const currentBlock = await provider.getBlockNumber();
+  const eventBlock = await event.getBlock();
+  
+  if (currentBlock - eventBlock.number < CONFIRMATIONS) {
+    // Wait for more confirmations
+    await waitForConfirmations(eventBlock.number, CONFIRMATIONS);
+  }
+  
+  // Process event
+});
+```
+
+## Event Data Interpretation
+
+### Question State from Events
+
+Derive question state from event history:
+
+```javascript
+async function getQuestionState(questionID) {
+  const events = await getAllEventsForQuestion(questionID);
+  
+  let state = 'UNKNOWN';
+  
+  for (const event of events) {
+    switch (event.event) {
+      case 'QuestionInitialized':
+        state = 'INITIALIZED';
+        break;
+      case 'QuestionPaused':
+        state = 'PAUSED';
+        break;
+      case 'QuestionUnpaused':
+        state = 'ACTIVE';
+        break;
+      case 'QuestionFlagged':
+        state = 'FLAGGED';
+        break;
+      case 'QuestionReset':
+        state = 'RESET';
+        break;
+      case 'QuestionResolved':
+      case 'QuestionManuallyResolved':
+        state = 'RESOLVED';
+        break;
+    }
+  }
+  
+  return state;
+}
+```
+
+### Resolution Outcome Analysis
+
+```javascript
+function analyzeResolution(settledPrice, payouts) {
+  if (settledPrice === 0n) {
+    return { outcome: 'NO', payouts: [0, 1], description: 'Question resolved NO' };
+  } else if (settledPrice === ethers.utils.parseEther('0.5')) {
+    return { outcome: 'TIE', payouts: [1, 1], description: 'Unknown/ambiguous outcome' };
+  } else if (settledPrice === ethers.utils.parseEther('1')) {
+    return { outcome: 'YES', payouts: [1, 0], description: 'Question resolved YES' };
+  } else {
+    throw new Error(`Invalid settled price: ${settledPrice}`);
+  }
+}
+```
+
+## Integration Examples
+
+### Dashboard Metrics
+
+```javascript
+class AdapterMonitor {
+  constructor(adapter) {
+    this.adapter = adapter;
+    this.metrics = {
+      totalQuestions: 0,
+      resolvedQuestions: 0,
+      manualResolutions: 0,
+      disputes: 0,
+      paused: 0
+    };
+    
+    this.setupListeners();
+  }
+  
+  setupListeners() {
+    this.adapter.on('QuestionInitialized', () => {
+      this.metrics.totalQuestions++;
+    });
+    
+    this.adapter.on('QuestionResolved', () => {
+      this.metrics.resolvedQuestions++;
+    });
+    
+    this.adapter.on('QuestionManuallyResolved', () => {
+      this.metrics.manualResolutions++;
+    });
+    
+    this.adapter.on('QuestionReset', () => {
+      this.metrics.disputes++;
+    });
+  }
+  
+  getMetrics() {
+    return { ...this.metrics };
+  }
+}
+```
+
+## See Also
+
+- [Troubleshooting](/operations/troubleshooting) - Common issues and debugging
+- [Market States](/operations/market-states) - State transitions
+- [Admin Functions](/operations/admin-functions) - Administrative controls

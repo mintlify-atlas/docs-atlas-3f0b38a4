@@ -1,0 +1,118 @@
+---
+title: AncillaryDataLib
+description: Library for encoding and appending ancillary data with initializer addresses
+---
+
+## Overview
+
+`AncillaryDataLib` provides utility functions for working with ancillary data in the UMA CTF Adapter. It handles the encoding of initializer addresses and their appending to ancillary data using UTF-8 format.
+
+**Source:** `src/libraries/AncillaryDataLib.sol`
+
+## Functions
+
+### _appendAncillaryData
+
+```solidity
+function _appendAncillaryData(
+    address initializer,
+    bytes memory ancillaryData
+) internal pure returns (bytes memory)
+```
+
+Appends the initializer address to the ancillary data.
+
+**Parameters:**
+
+- `initializer` (address): The initializer address to append
+- `ancillaryData` (bytes): The existing ancillary data
+
+**Returns:**
+
+- (bytes): The ancillary data with the initializer address appended
+
+**Implementation Details:**
+
+The function concatenates the ancillary data with the constant prefix `,initializer:` followed by the UTF-8 encoded initializer address.
+
+---
+
+### _toUtf8BytesAddress
+
+```solidity
+function _toUtf8BytesAddress(
+    address addr
+) internal pure returns (bytes memory)
+```
+
+Converts an address to UTF-8 encoded bytes.
+
+**Parameters:**
+
+- `addr` (address): The address to encode
+
+**Returns:**
+
+- (bytes): UTF-8 encoded representation of the address
+
+**Implementation Details:**
+
+- Returns the address in all lowercase characters without the leading `0x` prefix
+- Based on UMA Protocol's AncillaryDataLib implementation
+- Uses gas-optimized hex encoding
+
+**Source Reference:**
+
+Adapted from [UMA Protocol's AncillaryData.sol](https://github.com/UMAprotocol/protocol/blob/9967e70e7db3f262fde0dc9d89ea04d4cd11ed97/packages/core/contracts/common/implementation/AncillaryData.sol)
+
+---
+
+### _toUtf8Bytes32Bottom
+
+```solidity
+function _toUtf8Bytes32Bottom(
+    bytes32 bytesIn
+) private pure returns (bytes32)
+```
+
+Converts the bottom half of a bytes32 input to hex in a gas-optimized way.
+
+**Parameters:**
+
+- `bytesIn` (bytes32): The bytes32 value to convert
+
+**Returns:**
+
+- (bytes32): Hex-encoded representation
+
+**Implementation Details:**
+
+This is a private helper function used internally by `_toUtf8BytesAddress`. It uses nibble interleaving and hex encoding techniques for optimal gas efficiency.
+
+**Source Reference:**
+
+Based on the implementation from [Ethereum Solidity Gitter discussion](https://gitter.im/ethereum/solidity?at=5840d23416207f7b0ed08c9b)
+
+## Usage Example
+
+```solidity
+import { AncillaryDataLib } from "./libraries/AncillaryDataLib.sol";
+
+contract Example {
+    using AncillaryDataLib for *;
+    
+    function createAncillaryData(
+        address initializer,
+        bytes memory baseData
+    ) public pure returns (bytes memory) {
+        return AncillaryDataLib._appendAncillaryData(
+            initializer,
+            baseData
+        );
+    }
+}
+```
+
+## Constants
+
+- `INITIALIZER_PREFIX`: `",initializer:"` - Prefix used when appending initializer addresses

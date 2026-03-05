@@ -1,0 +1,398 @@
+---
+title: 'Resolving Markets'
+description: 'Learn how to check readiness and resolve prediction markets using the UMA CTF Adapter'
+---
+
+## Overview
+
+Market resolution is the process of finalizing a prediction market's outcome by pulling the settled price from UMA's Optimistic Oracle and reporting it to the Conditional Tokens Framework. This determines how positions pay out to holders.
+
+## Resolution Flow
+
+<Steps>
+  <Step title="Proposal Phase">
+    An OO proposer submits an answer (0, 0.5, or 1) and posts a bond
+  </Step>
+  
+  <Step title="Liveness Period">
+    The proposal can be disputed during the configured liveness period
+  </Step>
+  
+  <Step title="Check Readiness">
+    Call `ready()` to verify the market can be resolved
+  </Step>
+  
+  <Step title="Call Resolve">
+    Anyone can call `resolve()` to finalize the market and set payouts
+  </Step>
+</Steps>
+
+## Checking Market Readiness
+
+### ready() Function
+
+Before attempting resolution, check if a market is ready:
+
+```solidity UmaCtfAdapter.sol
+function ready(bytes32 questionID) public view returns (bool)
+```
+
+A market is ready when **all** of the following conditions are met:
+
+<AccordionGroup>
+  <Accordion title="Question is Initialized">
+    The `questionID` exists in the adapter's storage (created via `initialize()`)
+  </Accordion>
+  
+  <Accordion title="Not Paused">
+    The question hasn't been paused by an admin
+  </Accordion>
+  
+  <Accordion title="Not Already Resolved">
+    The question hasn't been resolved yet
+  </Accordion>
+  
+  <Accordion title="Price Available">
+    The Optimistic Oracle has a finalized price (proposal liveness period has passed without dispute)
+  </Accordion>
+</AccordionGroup>
+
+### Example: Polling for Readiness
+
+```solidity Check Readiness
+address adapter = 0x...;
+bytes32 questionID = 0x...;
+
+if (IUmaCtfAdapter(adapter).ready(questionID)) {
+    // Market is ready to resolve
+    IUmaCtfAdapter(adapter).resolve(questionID);
+} else {
+    // Market is not ready yet
+    // Either: still in liveness, disputed, paused, or not initialized
+}
+```
+
+### Off-Chain Monitoring
+
+```typescript TypeScript Example
+import { ethers } from 'ethers';
+
+const adapter = new ethers.Contract(adapterAddress, abi, provider);
+const questionID = '0x...';
+
+// Poll every 60 seconds
+const checkInterval = setInterval(async () => {
+  const isReady = await adapter.ready(questionID);
+  
+  if (isReady) {
+    console.log('Market ready for resolution!');
+    
+    // Resolve the market
+    const tx = await adapter.resolve(questionID);
+    await tx.wait();
+    
+    console.log('Market resolved:', tx.hash);
+    clearInterval(checkInterval);
+  } else {
+    console.log('Market not ready yet...');
+  }
+}, 60000);
+```
+
+## Resolving Markets
+
+### resolve() Function
+
+```solidity UmaCtfAdapter.sol
+function resolve(bytes32 questionID) external
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique identifier of the question to resolve, returned from `initialize()`
+</ParamField>
+
+<Info>
+  **Permissionless:** Anyone can call `resolve()` once a market is ready. This allows for automated resolution by bots or interested parties.
+</Info>
+
+### Resolution Process
+
+When `resolve()` is called:
+
+<Steps>
+  <Step title="Validation">
+    Verifies:
+    - Question is initialized
+    - Question is not paused
+    - Question is not already resolved
+    - Price is available from Optimistic Oracle
+  </Step>
+  
+  <Step title="Price Settlement">
+    Calls `optimisticOracle.settleAndGetPrice()` to retrieve the finalized answer:
+    - `0` = NO (proposal rejected)
+    - `0.5 ether` = UNKNOWN (tie/ambiguous)
+    - `1 ether` = YES (proposal accepted)
+    - `type(int256).min` = IGNORE (trigger reset)
+  </Step>
+  
+  <Step title="Handle IGNORE Price">
+    If the OO returns the IGNORE price, the question is automatically reset with a new price request instead of resolving
+  </Step>
+  
+  <Step title="Construct Payouts">
+    Converts the OO price to a payout array:
+    - `0` → `[0, 1]` (NO wins, YES loses)
+    - `0.5 ether` → `[1, 1]` (50/50 split)
+    - `1 ether` → `[1, 0]` (YES wins, NO loses)
+  </Step>
+  
+  <Step title="Report to CTF">
+    Calls `ctf.reportPayouts(questionID, payouts)` to finalize the condition and enable redemptions
+  </Step>
+  
+  <Step title="Refund if Necessary">
+    If the question was previously disputed and reset, refunds the reward to the original creator
+  </Step>
+</Steps>
+
+### Example: Basic Resolution
+
+```solidity Resolve Market
+address adapter = 0x...;
+bytes32 questionID = 0x...;
+
+// Resolve the market
+try IUmaCtfAdapter(adapter).resolve(questionID) {
+    console.log("Market resolved successfully");
+} catch Error(string memory reason) {
+    console.log("Resolution failed:", reason);
+}
+```
+
+## Understanding Payouts
+
+### Payout Array Structure
+
+The CTF uses a payout array to determine how positions redeem:
+
+```solidity
+// Payout array format: [YES_OUTCOME, NO_OUTCOME]
+// Each value represents the proportion of collateral that outcome receives
+```
+
+### Payout Scenarios
+
+<CardGroup cols={3}>
+  <Card title="YES Wins" icon="check">
+    **Price:** `1 ether`
+    
+    **Payouts:** `[1, 0]`
+    
+    YES tokens redeem for full collateral
+    
+    NO tokens are worthless
+  </Card>
+  
+  <Card title="NO Wins" icon="xmark">
+    **Price:** `0`
+    
+    **Payouts:** `[0, 1]`
+    
+    NO tokens redeem for full collateral
+    
+    YES tokens are worthless
+  </Card>
+  
+  <Card title="UNKNOWN" icon="question">
+    **Price:** `0.5 ether`
+    
+    **Payouts:** `[1, 1]`
+    
+    Both tokens redeem for 50% of collateral
+  </Card>
+</CardGroup>
+
+<Warning>
+  **NegRiskOperator:** When using the NegRisk CTF variant, the `[1, 1]` payout (UNKNOWN) is not supported. Markets must resolve to `[1, 0]` or `[0, 1]`.
+</Warning>
+
+### Querying Expected Payouts
+
+You can check what payouts a market will have before resolving:
+
+```solidity UmaCtfAdapter.sol
+function getExpectedPayouts(bytes32 questionID) 
+    public 
+    view 
+    returns (uint256[] memory)
+```
+
+```solidity Example Usage
+bytes32 questionID = 0x...;
+
+try adapter.getExpectedPayouts(questionID) returns (uint256[] memory payouts) {
+    if (payouts[0] == 1 && payouts[1] == 0) {
+        console.log("YES will win");
+    } else if (payouts[0] == 0 && payouts[1] == 1) {
+        console.log("NO will win");
+    } else if (payouts[0] == 1 && payouts[1] == 1) {
+        console.log("UNKNOWN - 50/50 split");
+    }
+} catch {
+    console.log("Price not available yet");
+}
+```
+
+## Resolution Errors
+
+<ResponseField name="NotInitialized" type="error">
+  The `questionID` doesn't exist in the adapter.
+  
+  **Solution:** Verify the correct `questionID` from the `initialize()` call
+</ResponseField>
+
+<ResponseField name="Paused" type="error">
+  The question has been paused by an admin.
+  
+  **Solution:** Wait for admin to unpause or investigate the reason for pausing
+</ResponseField>
+
+<ResponseField name="Resolved" type="error">
+  The question has already been resolved.
+  
+  **Solution:** Check resolution status before calling `resolve()`
+</ResponseField>
+
+<ResponseField name="NotReadyToResolve" type="error">
+  The Optimistic Oracle doesn't have a finalized price yet.
+  
+  **Possible Reasons:**
+  - Liveness period hasn't elapsed
+  - No proposal has been submitted
+  - Proposal was disputed and is being resolved by DVM
+  
+  **Solution:** Wait for price to be available or check `ready()` first
+</ResponseField>
+
+<ResponseField name="InvalidOOPrice" type="error">
+  The Optimistic Oracle returned an invalid price (not 0, 0.5, or 1 ether).
+  
+  **Solution:** This indicates an oracle malfunction - contact UMA protocol team
+</ResponseField>
+
+## Price Reset on IGNORE
+
+If the Optimistic Oracle returns the special IGNORE price (`type(int256).min`), the adapter automatically resets the question:
+
+```solidity Source: UmaCtfAdapter.sol:423
+// If the OO returns the ignore price, reset the question
+if (price == _ignorePrice()) return _reset(address(this), questionID, true, questionData);
+```
+
+**What happens during reset:**
+- New `requestTimestamp` is set to current block timestamp
+- New price request is sent to Optimistic Oracle
+- Original reward is reused (paid by the adapter)
+- Question remains unresolved
+- `reset` flag is set to `true`
+
+<Info>
+  The IGNORE price is used when a question is deemed invalid, ambiguous, or needs to be re-proposed with additional context.
+</Info>
+
+## Events Emitted
+
+```solidity Resolution Event
+event QuestionResolved(
+    bytes32 indexed questionID,
+    int256 indexed settledPrice,
+    uint256[] payouts
+);
+```
+
+```solidity Reset Event
+event QuestionReset(bytes32 indexed questionID);
+```
+
+## Integration Patterns
+
+### Automated Resolution Bot
+
+```typescript Resolution Bot
+import { ethers } from 'ethers';
+
+class ResolutionBot {
+  async monitorAndResolve(questionIDs: string[]) {
+    for (const questionID of questionIDs) {
+      try {
+        const isReady = await this.adapter.ready(questionID);
+        
+        if (isReady) {
+          console.log(`Resolving ${questionID}...`);
+          
+          const tx = await this.adapter.resolve(questionID, {
+            gasLimit: 500000
+          });
+          
+          const receipt = await tx.wait();
+          console.log(`Resolved in tx: ${receipt.transactionHash}`);
+          
+          // Parse event to get payouts
+          const event = receipt.events?.find(
+            e => e.event === 'QuestionResolved'
+          );
+          
+          if (event) {
+            const { settledPrice, payouts } = event.args;
+            console.log(`Settled at price: ${settledPrice}`);
+            console.log(`Payouts: ${payouts}`);
+          }
+        }
+      } catch (error) {
+        console.error(`Failed to resolve ${questionID}:`, error.message);
+      }
+    }
+  }
+}
+```
+
+### Multi-Market Resolution
+
+```solidity Batch Resolution
+function resolveMultiple(address adapter, bytes32[] memory questionIDs) external {
+    for (uint256 i = 0; i < questionIDs.length; i++) {
+        try IUmaCtfAdapter(adapter).resolve(questionIDs[i]) {
+            emit MarketResolved(questionIDs[i]);
+        } catch Error(string memory reason) {
+            emit ResolutionFailed(questionIDs[i], reason);
+        }
+    }
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Always Check ready()" icon="magnifying-glass">
+    Call `ready()` before attempting resolution to avoid reverts and wasted gas
+  </Card>
+  
+  <Card title="Handle Errors" icon="triangle-exclamation">
+    Use try/catch blocks when resolving to gracefully handle failures
+  </Card>
+  
+  <Card title="Monitor Events" icon="bell">
+    Listen for `QuestionResolved` and `QuestionReset` events to track market state
+  </Card>
+  
+  <Card title="Query Payouts" icon="eye">
+    Use `getExpectedPayouts()` to preview outcomes before resolution
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<Card title="Handling Disputes" icon="gavel" href="/integration/handling-disputes">
+  Learn about the dispute flow, reset mechanism, and DVM escalation
+</Card>

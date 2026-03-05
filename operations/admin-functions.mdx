@@ -1,0 +1,342 @@
+---
+title: 'Admin Functions'
+description: 'Administrative functions for managing question lifecycle and resolution'
+---
+
+## Overview
+
+The UMA CTF Adapter provides several admin-only functions to manage question lifecycle, handle edge cases, and intervene when necessary. All functions require the caller to have admin privileges via the `onlyAdmin` modifier.
+
+## Flag
+
+Flags a market for manual resolution, pausing automatic resolution through the Optimistic Oracle.
+
+### Function Signature
+
+```solidity
+function flag(bytes32 questionID) external onlyAdmin
+```
+
+### Parameters
+
+- `questionID` - The unique identifier of the question to flag
+
+### Behavior
+
+- Sets `manualResolutionTimestamp` to `block.timestamp + SAFETY_PERIOD` (1 hour)
+- Pauses the question to prevent automatic resolution
+- Emits `QuestionFlagged` event
+
+### Requirements
+
+- Question must be initialized
+- Question must not already be flagged
+- Question must not be resolved
+
+### Use Cases
+
+- Disputed outcomes requiring human review
+- Ambiguous question wording
+- External events affecting question validity
+- Optimistic Oracle malfunction or manipulation concerns
+
+### Example
+
+```solidity
+// Flag a questionID for manual review
+adapter.flag(questionID);
+```
+
+---
+
+## Unflag
+
+Removes the manual resolution flag, allowing automatic resolution to proceed.
+
+### Function Signature
+
+```solidity
+function unflag(bytes32 questionID) external onlyAdmin
+```
+
+### Parameters
+
+- `questionID` - The unique identifier of the question to unflag
+
+### Behavior
+
+- Resets `manualResolutionTimestamp` to 0
+- Unpauses the question
+- Emits `QuestionUnflagged` event
+
+### Requirements
+
+- Question must be initialized
+- Question must be flagged
+- Question must not be resolved
+- Safety period must not have passed (`block.timestamp <= manualResolutionTimestamp`)
+
+### Use Cases
+
+- False alarm - automatic resolution is safe to proceed
+- Issue resolved without manual intervention
+- Optimistic Oracle dispute resolved favorably
+
+### Example
+
+```solidity
+// Unflag a question after review
+adapter.unflag(questionID);
+```
+
+---
+
+## Reset
+
+Manually resets a question by sending out a new price request to the Optimistic Oracle.
+
+### Function Signature
+
+```solidity
+function reset(bytes32 questionID) external onlyAdmin
+```
+
+### Parameters
+
+- `questionID` - The unique identifier of the question to reset
+
+### Behavior
+
+- Refunds the reward to the question creator if necessary
+- Updates `requestTimestamp` to current `block.timestamp`
+- Sets `reset` flag to `true`
+- Sends a new price request to the Optimistic Oracle
+- Admin pays for the new price request
+- Emits `QuestionReset` event
+
+### Requirements
+
+- Question must be initialized
+- Question must not be resolved
+
+### Use Cases
+
+- Failsafe when `priceDisputed` callback reverts during execution
+- Recovery from Optimistic Oracle errors
+- Resubmitting questions after technical issues
+- Manual intervention when automatic reset fails
+
+### Important Notes
+
+- The admin calling `reset` pays for the new price request
+- The original reward is refunded to the question creator
+- This ensures at most 2 concurrent OO requests per question
+
+### Example
+
+```solidity
+// Reset a question after callback failure
+adapter.reset(questionID);
+```
+
+---
+
+## Resolve Manually
+
+Allows an admin to manually resolve a CTF market with specified payouts.
+
+### Function Signature
+
+```solidity
+function resolveManually(bytes32 questionID, uint256[] calldata payouts) external onlyAdmin
+```
+
+### Parameters
+
+- `questionID` - The unique identifier of the question
+- `payouts` - Array of position payouts for the question (e.g., `[1, 0]` for YES, `[0, 1]` for NO, `[1, 1]` for 50/50)
+
+### Behavior
+
+- Validates the payout array
+- Marks question as `resolved`
+- Refunds reward to creator if necessary
+- Reports payouts to the CTF
+- Emits `QuestionManuallyResolved` event
+
+### Requirements
+
+- Question must be initialized
+- Question must be flagged
+- Safety period must have passed (`block.timestamp >= manualResolutionTimestamp`)
+- Payout array must be valid (validated by `PayoutHelperLib.isValidPayoutArray`)
+
+### Valid Payout Arrays
+
+- `[1, 0]` - YES outcome
+- `[0, 1]` - NO outcome  
+- `[1, 1]` - 50/50 split (UNKNOWN/invalid outcome)
+
+### Use Cases
+
+- Resolving questions after the safety period when automatic resolution fails
+- Implementing community governance decisions
+- Handling edge cases not covered by Optimistic Oracle
+- Resolving after external arbitration
+
+### Safety Period
+
+The `SAFETY_PERIOD` constant is set to **1 hour**. This provides:
+
+- Time for stakeholders to review the flagging decision
+- Window to unflag if the issue is resolved
+- Protection against hasty manual resolution
+
+### Example
+
+```solidity
+// Manually resolve as YES after safety period
+uint256[] memory payouts = new uint256[](2);
+payouts[0] = 1; // YES
+payouts[1] = 0; // NO
+
+adapter.resolveManually(questionID, payouts);
+```
+
+---
+
+## Pause
+
+Pauses market resolution, preventing the `resolve()` function from being called.
+
+### Function Signature
+
+```solidity
+function pause(bytes32 questionID) external onlyAdmin
+```
+
+### Parameters
+
+- `questionID` - The unique identifier of the question to pause
+
+### Behavior
+
+- Sets `paused` flag to `true`
+- Emits `QuestionPaused` event
+
+### Requirements
+
+- Question must be initialized
+- Question must not be resolved
+
+### Use Cases
+
+- Temporary halt during investigation
+- Preventing resolution while gathering more information
+- Coordination with external stakeholders
+- Emergency stop during suspected manipulation
+
+### Example
+
+```solidity
+// Pause a question temporarily
+adapter.pause(questionID);
+```
+
+---
+
+## Unpause
+
+Unpauses market resolution, allowing the `resolve()` function to be called.
+
+### Function Signature
+
+```solidity
+function unpause(bytes32 questionID) external onlyAdmin
+```
+
+### Parameters
+
+- `questionID` - The unique identifier of the question to unpause
+
+### Behavior
+
+- Sets `paused` flag to `false`
+- Emits `QuestionUnpaused` event
+
+### Requirements
+
+- Question must be initialized
+
+### Use Cases
+
+- Resuming resolution after investigation complete
+- Lifting temporary halt
+- Allowing resolution to proceed after external coordination
+
+### Example
+
+```solidity
+// Unpause a question after investigation
+adapter.unpause(questionID);
+```
+
+---
+
+## Admin Function Workflow
+
+Typical workflows for using admin functions:
+
+### Investigation Workflow
+
+1. `pause(questionID)` - Stop resolution during investigation
+2. Review question data and external information
+3. Decision point:
+   - If automatic resolution is safe: `unpause(questionID)`
+   - If manual intervention needed: `flag(questionID)`
+
+### Manual Resolution Workflow
+
+1. `flag(questionID)` - Flag for manual resolution (sets 1-hour safety period)
+2. Review period (1 hour minimum)
+3. Decision point:
+   - If automatic resolution is now safe: `unflag(questionID)` (within safety period)
+   - If manual resolution required: Wait for safety period to pass
+4. `resolveManually(questionID, payouts)` - Resolve with determined payouts
+
+### Reset Recovery Workflow
+
+1. Detect that `priceDisputed` callback failed
+2. `reset(questionID)` - Manually reset the question
+3. Monitor new OO price request
+4. Normal resolution proceeds
+
+---
+
+## Security Considerations
+
+### Safety Period
+
+The 1-hour safety period for manual resolution provides:
+
+- Protection against immediate manual resolution
+- Time for community review and potential unflagging
+- Reduced risk of admin error or malicious action
+
+### Admin Privileges
+
+All these functions require `onlyAdmin` access. Admins should:
+
+- Use multi-signature wallets
+- Document all admin actions
+- Follow governance procedures for manual resolutions
+- Maintain transparency with stakeholders
+
+### State Transitions
+
+Understanding valid state transitions is critical:
+
+- **Paused**: Can be unpaused or flagged
+- **Flagged**: Can be unflagged (within safety period) or manually resolved (after safety period)
+- **Resolved**: Final state, no further actions possible
+- **Reset**: New price request initiated, can be resolved normally

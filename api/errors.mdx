@@ -1,0 +1,151 @@
+---
+title: 'Errors'
+description: 'All custom errors defined in the UmaCtfAdapter contract'
+---
+
+## NotInitialized
+
+The question has not been initialized.
+
+**When thrown:**
+- When attempting to resolve a question that doesn't exist (UmaCtfAdapter.sol:132)
+- When attempting to flag a question that doesn't exist (UmaCtfAdapter.sol:212)
+- When attempting to unflag a question that doesn't exist (UmaCtfAdapter.sol:227)
+- When attempting to reset a question that doesn't exist (UmaCtfAdapter.sol:243)
+- When attempting to manually resolve a question that doesn't exist (UmaCtfAdapter.sol:260)
+- When attempting to pause a question that doesn't exist (UmaCtfAdapter.sol:278)
+- When attempting to unpause a question that doesn't exist (UmaCtfAdapter.sol:289)
+- When calling `getExpectedPayouts()` for a question that doesn't exist (UmaCtfAdapter.sol:146)
+
+---
+
+## NotFlagged
+
+The question has not been flagged for manual resolution.
+
+**When thrown:**
+- When attempting to unflag a question that isn't flagged (UmaCtfAdapter.sol:228)
+- When attempting to manually resolve a question that isn't flagged (UmaCtfAdapter.sol:261)
+
+---
+
+## NotReadyToResolve
+
+The question is not ready to be resolved (price not available from Optimistic Oracle).
+
+**When thrown:**
+- When attempting to resolve a question before the Optimistic Oracle has a price available (UmaCtfAdapter.sol:135)
+
+---
+
+## Resolved
+
+The question has already been resolved.
+
+**When thrown:**
+- When attempting to initialize a question with an ID that's already resolved (UmaCtfAdapter.sol:134)
+- When attempting to flag a question that's already resolved (UmaCtfAdapter.sol:214)
+- When attempting to unflag a question that's already resolved (UmaCtfAdapter.sol:229)
+- When attempting to reset a question that's already resolved (UmaCtfAdapter.sol:244)
+- When attempting to pause a question that's already resolved (UmaCtfAdapter.sol:279)
+
+---
+
+## Initialized
+
+The question has already been initialized.
+
+**When thrown:**
+- When attempting to initialize a question with an ID that already exists (UmaCtfAdapter.sol:102)
+
+---
+
+## UnsupportedToken
+
+The reward token is not on the collateral whitelist.
+
+**When thrown:**
+- When attempting to initialize a question with a reward token that's not whitelisted (UmaCtfAdapter.sol:95)
+
+---
+
+## Flagged
+
+The question has been flagged for manual resolution.
+
+**When thrown:**
+- When attempting to flag a question that's already flagged (UmaCtfAdapter.sol:213)
+- When calling `getExpectedPayouts()` for a flagged question (UmaCtfAdapter.sol:147)
+
+---
+
+## Paused
+
+The question has been paused.
+
+**When thrown:**
+- When attempting to resolve a paused question (UmaCtfAdapter.sol:133)
+- When calling `getExpectedPayouts()` for a paused question (UmaCtfAdapter.sol:148)
+
+---
+
+## SafetyPeriodPassed
+
+The safety period has already passed, preventing unflagging.
+
+**When thrown:**
+- When attempting to unflag a question after the safety period (1 hour) has elapsed (UmaCtfAdapter.sol:230)
+
+---
+
+## SafetyPeriodNotPassed
+
+The safety period has not yet passed, preventing manual resolution.
+
+**When thrown:**
+- When attempting to manually resolve a flagged question before the safety period has elapsed (UmaCtfAdapter.sol:262)
+
+---
+
+## PriceNotAvailable
+
+The price is not available from the Optimistic Oracle.
+
+**When thrown:**
+- When calling `getExpectedPayouts()` for a question that doesn't have a price from the Optimistic Oracle yet (UmaCtfAdapter.sol:150)
+
+---
+
+## InvalidAncillaryData
+
+The ancillary data provided is invalid (empty or exceeds maximum length).
+
+**When thrown:**
+- When attempting to initialize a question with empty ancillary data or data exceeding 8139 bytes (UmaCtfAdapter.sol:98)
+
+---
+
+## NotOptimisticOracle
+
+The caller is not the Optimistic Oracle contract.
+
+**When thrown:**
+- When the `priceDisputed()` callback is called by an address other than the Optimistic Oracle (UmaCtfAdapter.sol:52)
+
+---
+
+## InvalidOOPrice
+
+The price returned by the Optimistic Oracle is not a valid value.
+
+**When thrown:**
+- When the Optimistic Oracle returns a price other than 0, 0.5e18, or 1e18 (UmaCtfAdapter.sol:465)
+
+---
+
+## InvalidPayouts
+
+The payout array provided for manual resolution is invalid.
+
+**When thrown:**
+- When attempting to manually resolve a question with an invalid payout array (UmaCtfAdapter.sol:259)

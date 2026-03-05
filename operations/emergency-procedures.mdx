@@ -1,0 +1,553 @@
+---
+title: 'Emergency Procedures'
+description: 'Emergency response workflows, manual resolution, and pause/unpause procedures'
+---
+
+## Overview
+
+This guide provides step-by-step emergency procedures for handling critical situations in the UMA CTF Adapter. These procedures should be followed by admins when automatic resolution mechanisms fail or when immediate intervention is required.
+
+---
+
+## Emergency Response Framework
+
+### Assessment Phase
+
+1. **Identify the issue**
+   - Question resolution failure
+   - Optimistic Oracle manipulation
+   - Technical malfunction
+   - External event impact
+
+2. **Determine severity**
+   - **Critical**: Immediate action required (pause)
+   - **High**: Manual resolution likely needed (flag)
+   - **Medium**: Investigation required (pause temporarily)
+   - **Low**: Monitor and document
+
+3. **Document the situation**
+   - Record questionID
+   - Note current state and timestamp
+   - Document evidence and reasoning
+   - Communicate with stakeholders
+
+---
+
+## Procedure 1: Emergency Pause
+
+### When to Use
+
+- Suspected Optimistic Oracle manipulation
+- Smart contract vulnerability discovered
+- Critical bug in resolution logic
+- Need time for investigation without risk of incorrect resolution
+
+### Steps
+
+**1. Immediate Pause**
+
+```solidity
+// Stop resolution immediately
+adapter.pause(questionID);
+```
+
+**2. Verify Pause Status**
+
+```solidity
+// Check question state
+QuestionData memory question = adapter.getQuestion(questionID);
+require(question.paused == true, "Pause failed");
+require(question.resolved == false, "Already resolved");
+```
+
+**3. Investigate the Issue**
+
+- Review question data: `adapter.getQuestion(questionID)`
+- Check if initialized: `adapter.isInitialized(questionID)`
+- Check if flagged: `adapter.isFlagged(questionID)`
+- Review Optimistic Oracle state
+- Consult with technical team
+
+**4. Resolution Path**
+
+After investigation, choose one:
+
+**Path A: Resume Normal Operations**
+
+```solidity
+// If issue resolved, unpause
+adapter.unpause(questionID);
+```
+
+**Path B: Proceed to Manual Resolution**
+
+```solidity
+// If manual intervention needed, flag for manual resolution
+adapter.flag(questionID);
+// Note: This will also pause the question if not already paused
+```
+
+### Timing Considerations
+
+- Pause immediately upon detection
+- Complete investigation within 24 hours
+- Communicate timeline to stakeholders
+- Unpause or flag based on findings
+
+---
+
+## Procedure 2: Manual Resolution Workflow
+
+### When to Use
+
+- Optimistic Oracle returns incorrect or disputed result
+- Ambiguous question wording requiring interpretation
+- External events make automatic resolution impossible
+- Community governance decision overrides automatic resolution
+
+### Prerequisites
+
+- Admin access verified
+- Issue investigation completed
+- Community/stakeholders consulted (if applicable)
+- Correct payout determined
+
+### Steps
+
+**1. Flag the Question**
+
+```solidity
+// Initiates 1-hour safety period
+adapter.flag(questionID);
+```
+
+**2. Verify Flag Status**
+
+```solidity
+// Check that flag was successful
+QuestionData memory question = adapter.getQuestion(questionID);
+require(question.manualResolutionTimestamp > 0, "Flag failed");
+require(question.paused == true, "Question not paused");
+
+// Calculate when manual resolution is allowed
+uint256 resolutionTime = question.manualResolutionTimestamp;
+// resolutionTime = block.timestamp + 1 hour
+```
+
+**3. Safety Period Review (1 Hour)**
+
+During the safety period:
+
+- Announce flagging to community
+- Review evidence and reasoning
+- Consider alternative perspectives
+- Monitor for new information
+- Check if unflagging is appropriate
+
+**Option: Unflag if Issue Resolved**
+
+```solidity
+// Only possible BEFORE safety period expires
+if (block.timestamp <= question.manualResolutionTimestamp) {
+    adapter.unflag(questionID);
+    // Question will unpause and automatic resolution can proceed
+}
+```
+
+**4. Wait for Safety Period**
+
+```solidity
+// Check if safety period has passed
+QuestionData memory question = adapter.getQuestion(questionID);
+require(
+    block.timestamp >= question.manualResolutionTimestamp,
+    "Safety period not passed"
+);
+```
+
+**5. Determine Correct Payouts**
+
+Based on evidence and investigation:
+
+```solidity
+// YES outcome: [1, 0]
+uint256[] memory yesPayouts = new uint256[](2);
+yesPayouts[0] = 1;
+yesPayouts[1] = 0;
+
+// NO outcome: [0, 1]
+uint256[] memory noPayouts = new uint256[](2);
+noPayouts[0] = 0;
+noPayouts[1] = 1;
+
+// UNKNOWN/INVALID (50/50 split): [1, 1]
+// Note: Not valid for NegRiskOperator markets
+uint256[] memory unknownPayouts = new uint256[](2);
+unknownPayouts[0] = 1;
+unknownPayouts[1] = 1;
+```
+
+**6. Execute Manual Resolution**
+
+```solidity
+// Resolve with determined payouts
+adapter.resolveManually(questionID, payouts);
+```
+
+**7. Verify Resolution**
+
+```solidity
+// Confirm resolution completed
+QuestionData memory question = adapter.getQuestion(questionID);
+require(question.resolved == true, "Resolution failed");
+```
+
+**8. Post-Resolution**
+
+- Document the resolution and rationale
+- Announce outcome to community
+- Review process for improvements
+- Update procedures if needed
+
+### Manual Resolution Timeline
+
+```
+T+0:00  Flag question (safety period begins)
+        |
+        | 1-hour safety period
+        | (can unflag during this time)
+        |
+T+1:00  Safety period expires
+        | Manual resolution now allowed
+        |
+T+1:00+ Execute resolveManually()
+        |
+        Resolution complete
+```
+
+---
+
+## Procedure 3: Reset Recovery
+
+### When to Use
+
+- `priceDisputed` callback reverts and fails to reset automatically
+- Optimistic Oracle request enters invalid state
+- Need to resubmit price request after technical failure
+
+### Symptoms
+
+- Question shows `reset = true` and `refund = true` but no new price request
+- Question stuck after dispute
+- Optimistic Oracle shows failed transaction for callback
+
+### Steps
+
+**1. Verify Reset is Needed**
+
+```solidity
+QuestionData memory question = adapter.getQuestion(questionID);
+
+// Check if automatic reset failed
+if (question.reset && question.refund) {
+    // Likely needs manual reset
+}
+
+// Verify not yet resolved
+require(question.resolved == false, "Already resolved");
+```
+
+**2. Execute Manual Reset**
+
+```solidity
+// Admin pays for new price request
+adapter.reset(questionID);
+```
+
+**3. Verify Reset Success**
+
+```solidity
+QuestionData memory question = adapter.getQuestion(questionID);
+
+// New requestTimestamp should be current
+require(
+    question.requestTimestamp >= block.timestamp - 60,
+    "Request not updated"
+);
+
+// Reset flag should be set
+require(question.reset == true, "Reset flag not set");
+
+// Refund should be cleared
+require(question.refund == false, "Refund not processed");
+```
+
+**4. Monitor New Request**
+
+- Check Optimistic Oracle for new price request
+- Monitor for proposal
+- Verify normal resolution can proceed
+
+**5. Cost Recovery**
+
+- Admin who called `reset()` paid for new price request
+- Original reward was refunded to question creator
+- Consider reimbursement process if applicable
+
+---
+
+## Procedure 4: Pause/Unpause Operations
+
+### Pause Use Cases
+
+**Temporary Investigation**
+```solidity
+// Pause for investigation
+adapter.pause(questionID);
+
+// Investigate...
+
+// Resume if no issue found
+adapter.unpause(questionID);
+```
+
+**Coordination Hold**
+```solidity
+// Pause while coordinating with external parties
+adapter.pause(questionID);
+
+// After coordination complete
+adapter.unpause(questionID);
+```
+
+**Pre-Flagging Assessment**
+```solidity
+// Pause first to prevent resolution
+adapter.pause(questionID);
+
+// Assess if manual resolution needed
+if (needsManualResolution) {
+    adapter.flag(questionID); // Also pauses
+} else {
+    adapter.unpause(questionID);
+}
+```
+
+### Unpause Considerations
+
+**Before unpausing, verify:**
+
+1. **Issue Resolved**: Problem that caused pause is fixed
+2. **Price Available**: Check if OO has price ready
+3. **No New Issues**: No additional concerns discovered
+4. **Stakeholder Agreement**: Consensus that automatic resolution is safe
+
+```solidity
+// Comprehensive check before unpause
+QuestionData memory question = adapter.getQuestion(questionID);
+
+// Ensure not flagged (if flagged, should unflag instead)
+require(
+    question.manualResolutionTimestamp == 0,
+    "Question is flagged, use unflag instead"
+);
+
+// Ensure not resolved
+require(question.resolved == false, "Already resolved");
+
+// Check if price is available (optional, depends on situation)
+// bool hasPrice = // check OO state
+
+// Unpause
+adapter.unpause(questionID);
+```
+
+---
+
+## Decision Tree
+
+```
+Issue Detected
+      |
+      v
+[Needs immediate stop?]
+      |
+  Yes |  No
+      |   |
+      |   v
+      | [Needs manual resolution?]
+      |       |
+      |   Yes |  No
+      |       |   |
+      |       |   v
+      |       | Monitor & Document
+      |       |
+      |       v
+      |   FLAG question
+      |   (1-hour safety period)
+      |       |
+      |       v
+      |   [Can unflag?]
+      |       |
+      |   Yes |  No
+      |       |   |
+      |       |   v
+      |       | Wait safety period
+      |       |       |
+      |       v       v
+      |   UNFLAG   RESOLVE MANUALLY
+      |
+      v
+  PAUSE question
+      |
+      v
+  Investigate
+      |
+      v
+  [Issue resolved?]
+      |
+  Yes |  No
+      |   |
+      v   v
+  UNPAUSE  FLAG (proceed to manual resolution)
+```
+
+---
+
+## Emergency Contact List
+
+### Internal
+
+- **Admin Multi-Sig Signers**: Coordinate for urgent admin actions
+- **Technical Team**: Smart contract engineers for investigation
+- **Operations Team**: Coordinate response and communication
+
+### External
+
+- **UMA Protocol Team**: For Optimistic Oracle issues
+- **Polymarket/CTF Team**: For CTF integration issues (if applicable)
+- **Community Moderators**: For stakeholder communication
+
+---
+
+## Monitoring and Detection
+
+### Key Metrics to Monitor
+
+1. **Question State**
+   - Paused questions
+   - Flagged questions
+   - Questions past expected resolution time
+
+2. **Events**
+   - `QuestionPaused`
+   - `QuestionFlagged`
+   - `QuestionReset`
+   - `QuestionManuallyResolved`
+
+3. **Optimistic Oracle**
+   - Failed callbacks
+   - Disputed proposals
+   - Unusual proposal/dispute patterns
+
+### Alert Thresholds
+
+- **Critical**: Callback reverts, price manipulation detected
+- **High**: Question flagged, multiple disputes
+- **Medium**: Unusual delay in resolution
+- **Low**: Price proposal made
+
+---
+
+## Post-Incident Review
+
+After any emergency procedure:
+
+1. **Document Incident**
+   - What happened and why
+   - Timeline of events
+   - Actions taken
+   - Outcome
+
+2. **Root Cause Analysis**
+   - Identify underlying cause
+   - Assess if preventable
+   - Review detection methods
+
+3. **Improve Procedures**
+   - Update this documentation
+   - Enhance monitoring
+   - Improve response time
+   - Train admin team
+
+4. **Communicate Results**
+   - Share findings with stakeholders
+   - Publish transparency report (if appropriate)
+   - Update community on preventive measures
+
+---
+
+## Safety Considerations
+
+### The 1-Hour Safety Period
+
+**Purpose:**
+- Prevents hasty manual resolution
+- Allows time for community review
+- Enables unflagging if issue resolves
+- Reduces admin error risk
+
+**Cannot be bypassed:** The safety period is enforced by smart contract and cannot be skipped.
+
+### Admin Responsibilities
+
+- **Act deliberately**: Emergency procedures are powerful, use carefully
+- **Document everything**: Maintain audit trail of all actions
+- **Communicate proactively**: Keep stakeholders informed
+- **Follow governance**: Adhere to established procedures and community decisions
+- **Verify carefully**: Double-check addresses, payouts, and states before executing
+
+### Common Mistakes to Avoid
+
+1. **Flagging without investigation**: Flag only when manual resolution is truly needed
+2. **Missing safety period**: Cannot manually resolve before safety period expires
+3. **Wrong payouts**: Verify payout array carefully before `resolveManually()`
+4. **Removing last admin**: Always maintain multiple admins
+5. **Unpausing prematurely**: Ensure issue is fully resolved before unpause
+6. **Not documenting**: Always record reasoning and evidence
+
+---
+
+## Testing Emergency Procedures
+
+### Testnet Practice
+
+Regularly practice emergency procedures on testnet:
+
+```solidity
+// 1. Deploy test adapter
+// 2. Initialize test question
+// 3. Practice pause
+adapter.pause(testQuestionID);
+
+// 4. Practice unpause
+adapter.unpause(testQuestionID);
+
+// 5. Practice flag
+adapter.flag(testQuestionID);
+
+// 6. Wait 1 hour (or use time manipulation on testnet)
+
+// 7. Practice manual resolution
+uint256[] memory payouts = new uint256[](2);
+payouts[0] = 1;
+payouts[1] = 0;
+adapter.resolveManually(testQuestionID, payouts);
+```
+
+### Simulation Exercises
+
+- **Quarterly drills**: Run through emergency scenarios
+- **Response time metrics**: Measure how quickly team can respond
+- **Documentation review**: Ensure procedures are up to date
+- **Role clarity**: Confirm each admin knows their responsibilities

@@ -1,0 +1,364 @@
+---
+title: IOptimisticOracleV2
+description: Interface for UMA's Optimistic Oracle V2
+---
+
+The `IOptimisticOracleV2` interface defines the functionality for interacting with UMA's Optimistic Oracle V2, which allows for optimistic price resolution with a dispute mechanism.
+
+## Overview
+
+The Optimistic Oracle V2 operates on an optimistic assertion model:
+
+1. A requester submits a price request with associated parameters
+2. A proposer can propose a price by posting a bond
+3. During a liveness period, anyone can dispute the proposed price
+4. If no dispute occurs, the proposed price is accepted
+5. If disputed, the matter is escalated to UMA's Data Verification Mechanism (DVM)
+
+## Structs
+
+### RequestSettings
+
+Configuration settings for a price request.
+
+```solidity
+struct RequestSettings {
+    bool eventBased;
+    bool refundOnDispute;
+    bool callbackOnPriceProposed;
+    bool callbackOnPriceDisputed;
+    bool callbackOnPriceSettled;
+    uint256 bond;
+    uint256 customLiveness;
+}
+```
+
+#### Fields
+
+- `eventBased` - True if the request is set to be event-based.
+- `refundOnDispute` - True if the requester should be refunded their reward on dispute.
+- `callbackOnPriceProposed` - True if callbackOnPriceProposed callback is required.
+- `callbackOnPriceDisputed` - True if callbackOnPriceDisputed callback is required.
+- `callbackOnPriceSettled` - True if callbackOnPriceSettled callback is required.
+- `bond` - Bond that the proposer and disputer must pay on top of the final fee.
+- `customLiveness` - Custom liveness value set by the requester.
+
+### Request
+
+Represents a price request.
+
+```solidity
+struct Request {
+    address proposer;
+    address disputer;
+    IERC20 currency;
+    bool settled;
+    RequestSettings requestSettings;
+    int256 proposedPrice;
+    int256 resolvedPrice;
+    uint256 expirationTime;
+    uint256 reward;
+    uint256 finalFee;
+}
+```
+
+#### Fields
+
+- `proposer` - Address of the proposer.
+- `disputer` - Address of the disputer.
+- `currency` - ERC20 token used to pay rewards and fees.
+- `settled` - True if the request is settled.
+- `requestSettings` - Custom settings associated with the request.
+- `proposedPrice` - Price that the proposer submitted.
+- `resolvedPrice` - Price resolved once the request is settled.
+- `expirationTime` - Time at which the request auto-settles without a dispute.
+- `reward` - Amount of the currency to pay to the proposer on settlement.
+- `finalFee` - Final fee to pay to the Store upon request to the DVM.
+
+## Core Functions
+
+### requestPrice
+
+Requests a new price from the oracle.
+
+```solidity
+function requestPrice(
+    bytes32 identifier,
+    uint256 timestamp,
+    bytes memory ancillaryData,
+    IERC20 currency,
+    uint256 reward
+) external returns (uint256 totalBond);
+```
+
+#### Parameters
+
+- `identifier` - Price identifier being requested.
+- `timestamp` - Timestamp of the price being requested.
+- `ancillaryData` - Ancillary data representing additional args being passed with the price request.
+- `currency` - ERC20 token used for payment of rewards and fees. Must be approved for use with the DVM.
+- `reward` - Reward offered to a successful proposer. Will be pulled from the caller. Note: this can be 0, which could make sense if the contract requests and proposes the value in the same call or provides its own reward system.
+
+#### Returns
+
+- `totalBond` - Default bond (final fee) + final fee that the proposer and disputer will be required to pay. This can be changed with a subsequent call to `setBond()`.
+
+### proposePrice
+
+Proposes a price value for an existing price request.
+
+```solidity
+function proposePrice(
+    address requester,
+    bytes32 identifier,
+    uint256 timestamp,
+    bytes memory ancillaryData,
+    int256 proposedPrice
+) external returns (uint256 totalBond);
+```
+
+#### Parameters
+
+- `requester` - Sender of the initial price request.
+- `identifier` - Price identifier to identify the existing request.
+- `timestamp` - Timestamp to identify the existing request.
+- `ancillaryData` - Ancillary data of the price being requested.
+- `proposedPrice` - Price being proposed.
+
+#### Returns
+
+- `totalBond` - The amount pulled from the proposer's wallet as a bond. The bond will be returned to the proposer once settled if the proposal is correct.
+
+### disputePrice
+
+Disputes a price value for an existing price request with an active proposal.
+
+```solidity
+function disputePrice(
+    address requester,
+    bytes32 identifier,
+    uint256 timestamp,
+    bytes memory ancillaryData
+) external returns (uint256 totalBond);
+```
+
+#### Parameters
+
+- `requester` - Sender of the initial price request.
+- `identifier` - Price identifier to identify the existing request.
+- `timestamp` - Timestamp to identify the existing request.
+- `ancillaryData` - Ancillary data of the price being requested.
+
+#### Returns
+
+- `totalBond` - The amount pulled from the disputer's wallet as a bond. The bond will be returned to the disputer once settled if the dispute was valid (the proposal was incorrect).
+
+## Configuration Functions
+
+### setBond
+
+Sets the proposal bond associated with a price request.
+
+```solidity
+function setBond(
+    bytes32 identifier,
+    uint256 timestamp,
+    bytes memory ancillaryData,
+    uint256 bond
+) external returns (uint256 totalBond);
+```
+
+#### Parameters
+
+- `identifier` - Price identifier to identify the existing request.
+- `timestamp` - Timestamp to identify the existing request.
+- `ancillaryData` - Ancillary data of the price being requested.
+- `bond` - Custom bond amount to set.
+
+#### Returns
+
+- `totalBond` - New bond + final fee that the proposer and disputer will be required to pay. This can be changed again with a subsequent call to `setBond()`.
+
+### setEventBased
+
+Sets the request to be an "event-based" request.
+
+```solidity
+function setEventBased(
+    bytes32 identifier,
+    uint256 timestamp,
+    bytes memory ancillaryData
+) external;
+```
+
+Calling this method has several impacts:
+
+1. The timestamp at which the request is evaluated is the time of the proposal, not the timestamp associated with the request.
+2. The proposer cannot propose the "too early" value (TOO_EARLY_RESPONSE). This ensures that a proposer who prematurely proposes a response loses their bond.
+3. RefundOnDispute is automatically set, meaning disputes trigger the reward to be automatically refunded to the requesting contract.
+
+#### Parameters
+
+- `identifier` - Price identifier to identify the existing request.
+- `timestamp` - Timestamp to identify the existing request.
+- `ancillaryData` - Ancillary data of the price being requested.
+
+### setCallbacks
+
+Sets which callbacks should be enabled for the request.
+
+```solidity
+function setCallbacks(
+    bytes32 identifier,
+    uint256 timestamp,
+    bytes memory ancillaryData,
+    bool callbackOnPriceProposed,
+    bool callbackOnPriceDisputed,
+    bool callbackOnPriceSettled
+) external;
+```
+
+#### Parameters
+
+- `identifier` - Price identifier to identify the existing request.
+- `timestamp` - Timestamp to identify the existing request.
+- `ancillaryData` - Ancillary data of the price being requested.
+- `callbackOnPriceProposed` - Whether to enable the callback onPriceProposed.
+- `callbackOnPriceDisputed` - Whether to enable the callback onPriceDisputed.
+- `callbackOnPriceSettled` - Whether to enable the callback onPriceSettled.
+
+### setCustomLiveness
+
+Sets a custom liveness value for the request.
+
+```solidity
+function setCustomLiveness(
+    bytes32 identifier,
+    uint256 timestamp,
+    bytes memory ancillaryData,
+    uint256 customLiveness
+) external;
+```
+
+Liveness is the amount of time a proposal must wait before being auto-resolved.
+
+#### Parameters
+
+- `identifier` - Price identifier to identify the existing request.
+- `timestamp` - Timestamp to identify the existing request.
+- `ancillaryData` - Ancillary data of the price being requested.
+- `customLiveness` - New custom liveness.
+
+## Settlement Functions
+
+### settle
+
+Attempts to settle an outstanding price request.
+
+```solidity
+function settle(
+    address requester,
+    bytes32 identifier,
+    uint256 timestamp,
+    bytes memory ancillaryData
+) external returns (uint256 payout);
+```
+
+Will revert if the request isn't settleable.
+
+#### Parameters
+
+- `requester` - Sender of the initial price request.
+- `identifier` - Price identifier to identify the existing request.
+- `timestamp` - Timestamp to identify the existing request.
+- `ancillaryData` - Ancillary data of the price being requested.
+
+#### Returns
+
+- `payout` - The amount that the "winner" (proposer or disputer) receives on settlement. This amount includes the returned bonds as well as additional rewards.
+
+### settleAndGetPrice
+
+Retrieves a price that was previously requested by a caller.
+
+```solidity
+function settleAndGetPrice(
+    bytes32 identifier,
+    uint256 timestamp,
+    bytes memory ancillaryData
+) external returns (int256);
+```
+
+Reverts if the request is not settled or settleable. Note: this method is not view so that this call may actually settle the price request if it hasn't been settled.
+
+#### Parameters
+
+- `identifier` - Price identifier to identify the existing request.
+- `timestamp` - Timestamp to identify the existing request.
+- `ancillaryData` - Ancillary data of the price being requested.
+
+#### Returns
+
+- `int256` - The resolved price.
+
+## View Functions
+
+### getRequest
+
+Gets the current data structure containing all information about a price request.
+
+```solidity
+function getRequest(
+    address requester,
+    bytes32 identifier,
+    uint256 timestamp,
+    bytes memory ancillaryData
+) external view returns (Request memory);
+```
+
+#### Parameters
+
+- `requester` - Sender of the initial price request.
+- `identifier` - Price identifier to identify the existing request.
+- `timestamp` - Timestamp to identify the existing request.
+- `ancillaryData` - Ancillary data of the price being requested.
+
+#### Returns
+
+- `Request` - The Request data structure.
+
+### hasPrice
+
+Checks if a given request has resolved or been settled.
+
+```solidity
+function hasPrice(
+    address requester,
+    bytes32 identifier,
+    uint256 timestamp,
+    bytes memory ancillaryData
+) external view returns (bool);
+```
+
+#### Parameters
+
+- `requester` - Sender of the initial price request.
+- `identifier` - Price identifier to identify the existing request.
+- `timestamp` - Timestamp to identify the existing request.
+- `ancillaryData` - Ancillary data of the price being requested.
+
+#### Returns
+
+- `bool` - True if price has resolved or settled, false otherwise.
+
+### defaultLiveness
+
+Returns the default liveness period.
+
+```solidity
+function defaultLiveness() external view returns (uint256);
+```
+
+#### Returns
+
+- `uint256` - The default liveness period in seconds.

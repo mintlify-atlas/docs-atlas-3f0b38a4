@@ -1,0 +1,86 @@
+---
+title: "Introduction"
+description: "Resolve Polymarket prediction markets using UMA's Optimistic Oracle"
+---
+
+## Overview
+
+The UMA CTF Adapter is a smart contract infrastructure that enables [Polymarket](https://polymarket.com/) prediction markets to be resolved through [UMA's Optimistic Oracle](https://docs.umaproject.org/oracle/optimistic-oracle-interface). It serves as an oracle bridge between the [Conditional Tokens Framework (CTF)](https://docs.gnosis.io/conditionaltokens/) and UMA's decentralized resolution mechanism.
+
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand how the adapter integrates CTF with UMA
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Deploy and initialize your first market
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/umactfadapter">
+    Explore the complete contract API
+  </Card>
+  <Card title="Operations" icon="wrench" href="/operations/admin-functions">
+    Learn about admin controls and monitoring
+  </Card>
+</CardGroup>
+
+## Key Features
+
+<AccordionGroup>
+  <Accordion title="Optimistic Oracle Integration" icon="handshake">
+    Leverages UMA's Optimistic Oracle for decentralized, economically-secured market resolution with configurable rewards and bonds.
+  </Accordion>
+  
+  <Accordion title="Automatic Dispute Handling" icon="rotate">
+    When a resolution is disputed for the first time, the market automatically resets with a new Optimistic Oracle request to prevent obviously incorrect disputes from slowing down resolution.
+  </Accordion>
+  
+  <Accordion title="Manual Resolution Safeguards" icon="shield-halved">
+    Admins can flag markets for manual resolution with a 1-hour safety period, providing a fallback mechanism for edge cases.
+  </Accordion>
+  
+  <Accordion title="Flexible Configuration" icon="sliders">
+    Configure reward amounts, proposal bonds, and liveness periods per market to properly incentivize proposers based on market value.
+  </Accordion>
+  
+  <Accordion title="OpenZeppelin Audited" icon="check-double">
+    Security-audited by OpenZeppelin to ensure contract safety and reliability.
+  </Accordion>
+</AccordionGroup>
+
+## How It Works
+
+<Steps>
+  <Step title="Initialize Market">
+    A market creator calls `initialize()` with the question data, reward token, reward amount, proposal bond, and liveness period. This prepares the condition on CTF and requests resolution data from UMA's Optimistic Oracle.
+  </Step>
+  
+  <Step title="Proposer Response">
+    UMA proposers fetch resolution data off-chain and submit proposals on-chain. If not disputed, the data becomes available after the liveness period (typically 2 hours).
+  </Step>
+  
+  <Step title="Dispute Handling">
+    If disputed once, the market automatically resets with a new request. If disputed again, UMA's DVM (Data Verification Mechanism) arbitrates over 48-72 hours.
+  </Step>
+  
+  <Step title="Resolve Market">
+    Once resolution data is available, anyone can call `resolve()` to finalize the market using the Optimistic Oracle's result.
+  </Step>
+</Steps>
+
+## Use Cases
+
+The UMA CTF Adapter is designed for:
+
+- **Prediction Markets**: Resolve binary and multi-outcome prediction markets on Polymarket
+- **Conditional Tokens**: Any application using the Conditional Tokens Framework that needs decentralized oracle resolution
+- **DeFi Protocols**: Insurance, derivatives, and other DeFi products requiring trustless event resolution
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Learn the Architecture" icon="book-open" href="/architecture">
+    Deep dive into contract design and data flow
+  </Card>
+  <Card title="Deploy the Adapter" icon="upload" href="/deployment/setup">
+    Set up and configure your own deployment
+  </Card>
+</CardGroup>

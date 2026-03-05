@@ -1,0 +1,391 @@
+---
+title: 'UmaCtfAdapter'
+description: 'Main contract enabling resolution of Polymarket CTF markets via UMA Optimistic Oracle'
+---
+
+## Overview
+
+The `UmaCtfAdapter` contract is the core contract that enables resolution of Polymarket Conditional Tokens Framework (CTF) markets through UMA's Optimistic Oracle. It manages question initialization, resolution, and administrative functions for prediction markets.
+
+## Contract Address
+
+The contract is deployed at the address specified in your deployment configuration.
+
+## Public Functions
+
+### initialize
+
+Initializes a question and atomically adds it to the Adapter, prepares it on the Conditional Tokens Framework, and requests a price from the Optimistic Oracle.
+
+```solidity
+function initialize(
+    bytes memory ancillaryData,
+    address rewardToken,
+    uint256 reward,
+    uint256 proposalBond,
+    uint256 liveness
+) external returns (bytes32 questionID)
+```
+
+<ParamField path="ancillaryData" type="bytes" required>
+  Data used to resolve a question. This should contain the question details and criteria for resolution.
+</ParamField>
+
+<ParamField path="rewardToken" type="address" required>
+  ERC20 token address used for payment of rewards and fees. Must be on the collateral whitelist.
+</ParamField>
+
+<ParamField path="reward" type="uint256" required>
+  Reward offered to a successful Optimistic Oracle proposer. Must be chosen carefully to properly economically incentivize OO proposers. If non-zero, the caller must have approved the Adapter as spender.
+</ParamField>
+
+<ParamField path="proposalBond" type="uint256" required>
+  Bond required to be posted by OO proposers/disputers. If 0, the default OO bond is used. Must be chosen carefully to properly economically incentivize OO proposers and disputers. Questions expected to secure a large amount of value should consider a larger proposal bond.
+</ParamField>
+
+<ParamField path="liveness" type="uint256" required>
+  OO liveness period in seconds. If 0, the default liveness period of 2 hours is used. Must be chosen carefully depending on the value backed by the question. Questions expected to secure a large amount of value should consider a longer liveness period.
+</ParamField>
+
+**Returns:**
+- `questionID` (bytes32): The unique identifier for the initialized question, computed as `keccak256(ancillaryData)`.
+
+---
+
+### ready
+
+Checks whether a questionID is ready to be resolved.
+
+```solidity
+function ready(bytes32 questionID) public view returns (bool)
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID to check.
+</ParamField>
+
+**Returns:**
+- `bool`: True if the question is ready to be resolved (initialized, not paused, not resolved, and has a price available), false otherwise.
+
+---
+
+### resolve
+
+Resolves a question by pulling price information from the Optimistic Oracle and resolving the underlying CTF market.
+
+```solidity
+function resolve(bytes32 questionID) external
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID of the question to resolve.
+</ParamField>
+
+**Reverts if:**
+- Question is not initialized
+- Question is paused
+- Question is already resolved
+- Price is not available on the Optimistic Oracle
+
+**Note:** Resets the question if the price returned by the OO is the Ignore price.
+
+---
+
+### getExpectedPayouts
+
+Retrieves the expected payout array of the question based on the Optimistic Oracle price.
+
+```solidity
+function getExpectedPayouts(bytes32 questionID) public view returns (uint256[] memory)
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID of the question.
+</ParamField>
+
+**Returns:**
+- `uint256[]`: Array of payouts `[YES, NO]` where:
+  - Price 0 → `[0, 1]` (NO wins)
+  - Price 0.5 ether → `[1, 1]` (50/50 split, UNKNOWN)
+  - Price 1 ether → `[1, 0]` (YES wins)
+
+**Reverts if:**
+- Question is not initialized
+- Question is flagged for manual resolution
+- Question is paused
+- Price is not available
+
+---
+
+### isInitialized
+
+Checks if a question is initialized.
+
+```solidity
+function isInitialized(bytes32 questionID) public view returns (bool)
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID to check.
+</ParamField>
+
+**Returns:**
+- `bool`: True if the question is initialized, false otherwise.
+
+---
+
+### isFlagged
+
+Checks if a question has been flagged for manual resolution.
+
+```solidity
+function isFlagged(bytes32 questionID) public view returns (bool)
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID to check.
+</ParamField>
+
+**Returns:**
+- `bool`: True if the question is flagged for manual resolution, false otherwise.
+
+---
+
+### getQuestion
+
+Gets the QuestionData for the given questionID.
+
+```solidity
+function getQuestion(bytes32 questionID) external view returns (QuestionData memory)
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID to retrieve.
+</ParamField>
+
+**Returns:**
+- `QuestionData`: The complete question data struct. See [QuestionData](/api/question-data) for field details.
+
+---
+
+## Admin-Only Functions
+
+The following functions can only be called by authorized administrators.
+
+### flag
+
+Flags a market for manual resolution. Sets a safety period timestamp and pauses the question.
+
+```solidity
+function flag(bytes32 questionID) external onlyAdmin
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID of the question to flag.
+</ParamField>
+
+**Effects:**
+- Sets `manualResolutionTimestamp` to `block.timestamp + SAFETY_PERIOD` (1 hour)
+- Pauses the question
+
+---
+
+### unflag
+
+Unflags a market for manual resolution. Can only be called before the safety period has passed.
+
+```solidity
+function unflag(bytes32 questionID) external onlyAdmin
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID of the question to unflag.
+</ParamField>
+
+**Reverts if:**
+- Safety period has already passed
+
+---
+
+### reset
+
+Resets a question, sending out a new price request to the Optimistic Oracle. This is a failsafe to be used if the `priceDisputed` callback reverts during execution.
+
+```solidity
+function reset(bytes32 questionID) external onlyAdmin
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID to reset.
+</ParamField>
+
+**Effects:**
+- Refunds the reward to the question creator if necessary
+- Sends a new price request to the Optimistic Oracle
+- Admin pays for the new price request
+
+---
+
+### resolveManually
+
+Allows an admin to resolve a CTF market manually with specified payouts. Can only be called after the safety period has passed for a flagged question.
+
+```solidity
+function resolveManually(bytes32 questionID, uint256[] calldata payouts) external onlyAdmin
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID of the question to resolve.
+</ParamField>
+
+<ParamField path="payouts" type="uint256[]" required>
+  Array of position payouts for the referenced question. Must be a valid payout array.
+</ParamField>
+
+**Reverts if:**
+- Payouts array is invalid
+- Question is not initialized
+- Question is not flagged
+- Safety period has not passed
+
+---
+
+### pause
+
+Pauses market resolution for a question.
+
+```solidity
+function pause(bytes32 questionID) external onlyAdmin
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID of the question to pause.
+</ParamField>
+
+---
+
+### unpause
+
+Unpauses market resolution for a question.
+
+```solidity
+function unpause(bytes32 questionID) external onlyAdmin
+```
+
+<ParamField path="questionID" type="bytes32" required>
+  The unique questionID of the question to unpause.
+</ParamField>
+
+---
+
+## Optimistic Oracle Callback
+
+### priceDisputed
+
+Callback executed when a price is disputed in the Optimistic Oracle. Automatically resets the question and sends out a new price request.
+
+```solidity
+function priceDisputed(
+    bytes32,
+    uint256,
+    bytes memory ancillaryData,
+    uint256
+) external onlyOptimisticOracle
+```
+
+<ParamField path="ancillaryData" type="bytes" required>
+  Ancillary data of the request, used to identify the questionID.
+</ParamField>
+
+**Note:** This function can only be called by the Optimistic Oracle contract.
+
+---
+
+## Constants
+
+### SAFETY_PERIOD
+
+```solidity
+uint256 public constant SAFETY_PERIOD = 1 hours
+```
+
+Time period after which an admin can manually resolve a flagged condition.
+
+### YES_OR_NO_IDENTIFIER
+
+```solidity
+bytes32 public constant YES_OR_NO_IDENTIFIER = "YES_OR_NO_QUERY"
+```
+
+Unique query identifier for the Optimistic Oracle (from UMIP-107).
+
+### MAX_ANCILLARY_DATA
+
+```solidity
+uint256 public constant MAX_ANCILLARY_DATA = 8139
+```
+
+Maximum ancillary data length allowed (from OOV2 function `OO_ANCILLARY_DATA_LIMIT`).
+
+---
+
+## Immutable State Variables
+
+### ctf
+
+```solidity
+IConditionalTokens public immutable ctf
+```
+
+The Conditional Tokens Framework contract. For negative risk markets, this should be the `NegRiskOperator` contract address.
+
+### optimisticOracle
+
+```solidity
+IOptimisticOracleV2 public immutable optimisticOracle
+```
+
+The UMA Optimistic Oracle V2 contract.
+
+### collateralWhitelist
+
+```solidity
+IAddressWhitelist public immutable collateralWhitelist
+```
+
+Collateral whitelist contract that validates acceptable reward tokens.
+
+---
+
+## Events
+
+The contract emits the following events:
+
+- `QuestionInitialized(bytes32 indexed questionID, uint256 indexed requestTimestamp, address indexed creator, bytes ancillaryData, address rewardToken, uint256 reward, uint256 proposalBond)`
+- `QuestionPaused(bytes32 indexed questionID)`
+- `QuestionUnpaused(bytes32 indexed questionID)`
+- `QuestionFlagged(bytes32 indexed questionID)`
+- `QuestionUnflagged(bytes32 indexed questionID)`
+- `QuestionReset(bytes32 indexed questionID)`
+- `QuestionResolved(bytes32 indexed questionID, int256 indexed settledPrice, uint256[] payouts)`
+- `QuestionManuallyResolved(bytes32 indexed questionID, uint256[] payouts)`
+
+---
+
+## Errors
+
+- `NotInitialized()`: Question is not initialized
+- `NotFlagged()`: Question is not flagged
+- `NotReadyToResolve()`: Question is not ready to be resolved
+- `Resolved()`: Question is already resolved
+- `Initialized()`: Question is already initialized
+- `UnsupportedToken()`: Reward token is not on the whitelist
+- `Flagged()`: Question is flagged
+- `Paused()`: Question is paused
+- `SafetyPeriodPassed()`: Safety period has passed
+- `SafetyPeriodNotPassed()`: Safety period has not passed
+- `PriceNotAvailable()`: Price is not available from the Optimistic Oracle
+- `InvalidAncillaryData()`: Ancillary data is invalid (empty or too long)
+- `NotOptimisticOracle()`: Caller is not the Optimistic Oracle
+- `InvalidOOPrice()`: Price from Optimistic Oracle is invalid
+- `InvalidPayouts()`: Payout array is invalid

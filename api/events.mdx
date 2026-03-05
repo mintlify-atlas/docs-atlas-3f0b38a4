@@ -1,0 +1,110 @@
+---
+title: 'Events'
+description: 'All events emitted by the UmaCtfAdapter contract'
+---
+
+## QuestionInitialized
+
+Emitted when a new question is initialized and registered with the Optimistic Oracle.
+
+**Parameters:**
+- `questionID` (bytes32, indexed) - The unique identifier for the question
+- `requestTimestamp` (uint256, indexed) - The timestamp when the price request was made to the Optimistic Oracle
+- `creator` (address, indexed) - The address that initialized the question
+- `ancillaryData` (bytes) - Data used to resolve the question
+- `rewardToken` (address) - ERC20 token address used for payment of rewards and fees
+- `reward` (uint256) - Reward amount offered to a successful proposer
+- `proposalBond` (uint256) - Additional bond required by Optimistic Oracle proposers/disputers
+
+**When emitted:**
+- Called in `initialize()` after a question is saved, prepared on the CTF, and a price request is made to the Optimistic Oracle (UmaCtfAdapter.sol:115)
+
+---
+
+## QuestionPaused
+
+Emitted when a question is paused by an authorized admin.
+
+**Parameters:**
+- `questionID` (bytes32, indexed) - The unique identifier for the question
+
+**When emitted:**
+- Called in `pause()` when an admin pauses market resolution (UmaCtfAdapter.sol:282)
+
+---
+
+## QuestionUnpaused
+
+Emitted when a question is unpaused by an authorized admin.
+
+**Parameters:**
+- `questionID` (bytes32, indexed) - The unique identifier for the question
+
+**When emitted:**
+- Called in `unpause()` when an admin unpauses market resolution (UmaCtfAdapter.sol:292)
+
+---
+
+## QuestionFlagged
+
+Emitted when a question is flagged by an admin for manual resolution.
+
+**Parameters:**
+- `questionID` (bytes32, indexed) - The unique identifier for the question
+
+**When emitted:**
+- Called in `flag()` when an admin flags a market for manual resolution, setting the safety period timer (UmaCtfAdapter.sol:219)
+
+---
+
+## QuestionUnflagged
+
+Emitted when a question is unflagged by an admin.
+
+**Parameters:**
+- `questionID` (bytes32, indexed) - The unique identifier for the question
+
+**When emitted:**
+- Called in `unflag()` when an admin removes the manual resolution flag before the safety period has passed (UmaCtfAdapter.sol:235)
+
+---
+
+## QuestionReset
+
+Emitted when a question is reset, creating a new price request to the Optimistic Oracle.
+
+**Parameters:**
+- `questionID` (bytes32, indexed) - The unique identifier for the question
+
+**When emitted:**
+- Called in `_reset()` when:
+  - A question is disputed via the `priceDisputed()` callback from the Optimistic Oracle (UmaCtfAdapter.sol:182)
+  - An admin manually resets a question using `reset()` (UmaCtfAdapter.sol:250)
+  - The Optimistic Oracle returns an ignore price during resolution (UmaCtfAdapter.sol:423)
+
+---
+
+## QuestionResolved
+
+Emitted when a question is resolved through the Optimistic Oracle.
+
+**Parameters:**
+- `questionID` (bytes32, indexed) - The unique identifier for the question
+- `settledPrice` (int256, indexed) - The price returned by the Optimistic Oracle (0, 0.5e18, or 1e18)
+- `payouts` (uint256[]) - Array of payout values for each outcome ([YES, NO])
+
+**When emitted:**
+- Called in `_resolve()` when a question is successfully resolved via the Optimistic Oracle (UmaCtfAdapter.sol:438)
+
+---
+
+## QuestionManuallyResolved
+
+Emitted when a question is manually resolved by an admin.
+
+**Parameters:**
+- `questionID` (bytes32, indexed) - The unique identifier for the question
+- `payouts` (uint256[]) - Array of payout values for each outcome
+
+**When emitted:**
+- Called in `resolveManually()` when an admin manually resolves a flagged question after the safety period has passed (UmaCtfAdapter.sol:270)

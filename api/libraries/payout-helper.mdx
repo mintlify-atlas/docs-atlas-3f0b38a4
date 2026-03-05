@@ -1,0 +1,96 @@
+---
+title: PayoutHelperLib
+description: Library for validating binary outcome payout arrays
+---
+
+## Overview
+
+`PayoutHelperLib` provides validation utilities for payout arrays in the UMA CTF Adapter. It ensures that payout structures conform to the expected binary outcome format.
+
+**Source:** `src/libraries/PayoutHelperLib.sol`
+
+## Functions
+
+### isValidPayoutArray
+
+```solidity
+function isValidPayoutArray(
+    uint256[] memory payouts
+) internal pure returns (bool)
+```
+
+Validates whether a payout array conforms to the expected format for binary outcomes.
+
+**Parameters:**
+
+- `payouts` (uint256[]): The payout array to validate
+
+**Returns:**
+
+- (bool): `true` if the payout array is valid, `false` otherwise
+
+**Validation Rules:**
+
+A valid payout array must:
+
+1. **Have exactly 2 elements** - Binary outcomes require exactly two payout values
+2. **Match one of the following patterns:**
+   - `[1, 0]` - Full payout to the first outcome
+   - `[0, 1]` - Full payout to the second outcome
+   - `[1, 1]` - Equal payout to both outcomes (tie/indeterminate)
+
+**Invalid Patterns:**
+
+- `[0, 0]` - No payout to either outcome (invalid)
+- Arrays with length != 2
+- Any values other than 0 or 1
+
+## Usage Example
+
+```solidity
+import { PayoutHelperLib } from "./libraries/PayoutHelperLib.sol";
+
+contract Example {
+    using PayoutHelperLib for *;
+    
+    function validatePayout(uint256[] memory payouts) public pure returns (bool) {
+        require(
+            PayoutHelperLib.isValidPayoutArray(payouts),
+            "Invalid payout array"
+        );
+        return true;
+    }
+    
+    function exampleUsage() public pure {
+        uint256[] memory validPayout1 = new uint256[](2);
+        validPayout1[0] = 1;
+        validPayout1[1] = 0;
+        // Returns true
+        
+        uint256[] memory validPayout2 = new uint256[](2);
+        validPayout2[0] = 0;
+        validPayout2[1] = 1;
+        // Returns true
+        
+        uint256[] memory validPayout3 = new uint256[](2);
+        validPayout3[0] = 1;
+        validPayout3[1] = 1;
+        // Returns true
+        
+        uint256[] memory invalidPayout = new uint256[](2);
+        invalidPayout[0] = 0;
+        invalidPayout[1] = 0;
+        // Returns false
+    }
+}
+```
+
+## Binary Outcome Context
+
+This library is designed specifically for binary prediction markets where:
+
+- Each market has two possible outcomes
+- Payouts are represented as normalized values (0 or 1)
+- A payout of `[1, 0]` means the first outcome wins
+- A payout of `[0, 1]` means the second outcome wins
+- A payout of `[1, 1]` represents an indeterminate result or tie

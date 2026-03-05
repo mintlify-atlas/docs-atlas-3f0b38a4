@@ -1,0 +1,379 @@
+---
+title: 'Access Control'
+description: 'Admin management system using the Auth mixin'
+---
+
+## Overview
+
+The UMA CTF Adapter implements a simple yet effective access control system through the `Auth` mixin contract. This system manages admin privileges required for administrative functions like flagging, manual resolution, and emergency procedures.
+
+## Auth Mixin
+
+The `Auth` abstract contract provides the foundation for access control.
+
+### Location
+
+`src/mixins/Auth.sol`
+
+### Storage
+
+```solidity
+mapping(address => uint256) public admins;
+```
+
+Admins are tracked in a mapping where:
+- `admins[address] = 1` indicates the address is an admin
+- `admins[address] = 0` indicates the address is not an admin (or has been removed)
+
+### Modifier
+
+```solidity
+modifier onlyAdmin() {
+    if (admins[msg.sender] != 1) revert NotAdmin();
+    _;
+}
+```
+
+The `onlyAdmin` modifier restricts function access to addresses with admin privileges.
+
+### Constructor Behavior
+
+```solidity
+constructor() {
+    admins[msg.sender] = 1;
+}
+```
+
+The deployer of the UMA CTF Adapter contract is automatically assigned as the first admin.
+
+---
+
+## Add Admin
+
+Grants admin privileges to a new address.
+
+### Function Signature
+
+```solidity
+function addAdmin(address admin) external onlyAdmin
+```
+
+### Parameters
+
+- `admin` - The address to grant admin privileges
+
+### Behavior
+
+- Sets `admins[admin] = 1`
+- Emits `NewAdmin(msg.sender, admin)` event
+
+### Requirements
+
+- Caller must be an existing admin
+
+### Use Cases
+
+- Expanding admin team for operational scaling
+- Adding multi-signature wallet as admin
+- Granting admin rights to governance contracts
+- Decentralizing administrative control
+
+### Example
+
+```solidity
+// Add a new admin address
+adapter.addAdmin(0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5);
+```
+
+### Security Considerations
+
+- **Verify addresses carefully**: Incorrect addresses cannot be easily corrected
+- **Use multi-sig wallets**: Consider making the new admin a multi-signature wallet
+- **Document admin additions**: Maintain records of who was added and why
+- **Principle of least privilege**: Only add admins when necessary
+
+---
+
+## Remove Admin
+
+Revokes admin privileges from an address.
+
+### Function Signature
+
+```solidity
+function removeAdmin(address admin) external onlyAdmin
+```
+
+### Parameters
+
+- `admin` - The address to revoke admin privileges from
+
+### Behavior
+
+- Sets `admins[admin] = 0`
+- Emits `RemovedAdmin(msg.sender, admin)` event
+
+### Requirements
+
+- Caller must be an existing admin
+
+### Use Cases
+
+- Removing compromised admin accounts
+- Rotating admin keys for security
+- Removing admins who no longer require access
+- Responding to governance decisions
+
+### Example
+
+```solidity
+// Remove an admin address
+adapter.removeAdmin(0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb5);
+```
+
+### Security Considerations
+
+- **Maintain at least one admin**: Be careful not to remove all admins
+- **Verify the address**: Ensure you're removing the intended admin
+- **Coordinate with team**: Communicate admin removals to prevent operational disruption
+- **Emergency procedures**: Have a recovery plan if the wrong admin is removed
+
+---
+
+## Renounce Admin
+
+Allows an admin to voluntarily renounce their own admin privileges.
+
+### Function Signature
+
+```solidity
+function renounceAdmin() external onlyAdmin
+```
+
+### Behavior
+
+- Sets `admins[msg.sender] = 0`
+- Emits `RemovedAdmin(msg.sender, msg.sender)` event
+
+### Requirements
+
+- Caller must be an existing admin
+
+### Use Cases
+
+- Rotating admin responsibilities
+- Transitioning to new admin accounts
+- Reducing admin surface area
+- Voluntary step-down from admin role
+
+### Example
+
+```solidity
+// Renounce admin privileges
+adapter.renounceAdmin();
+```
+
+### Security Considerations
+
+- **Ensure backup admins exist**: Don't renounce if you're the last admin
+- **Irreversible without other admins**: You cannot re-add yourself without another admin
+- **Coordinate with team**: Ensure someone else can handle admin duties
+- **Use with caution**: This action cannot be undone by the renouncing admin
+
+---
+
+## Is Admin (View Function)
+
+Checks if an address has admin privileges.
+
+### Function Signature
+
+```solidity
+function isAdmin(address addr) external view returns (bool)
+```
+
+### Parameters
+
+- `addr` - The address to check
+
+### Returns
+
+- `true` if the address is an admin (`admins[addr] == 1`)
+- `false` otherwise
+
+### Use Cases
+
+- Frontend authorization checks
+- Verification before admin operations
+- Auditing admin status
+- Integration with governance systems
+
+### Example
+
+```solidity
+// Check if an address is an admin
+bool isAdminUser = adapter.isAdmin(userAddress);
+
+if (isAdminUser) {
+    // Show admin controls
+}
+```
+
+---
+
+## Admin Management Best Practices
+
+### Multi-Signature Wallets
+
+For production deployments:
+
+```solidity
+// 1. Deploy UMA CTF Adapter (deployer is initial admin)
+// 2. Add multi-sig wallet as admin
+adapter.addAdmin(multiSigWallet);
+
+// 3. Remove deployer EOA (from multi-sig)
+adapter.removeAdmin(deployerEOA);
+```
+
+### Admin Rotation
+
+Rotating admin keys for security:
+
+```solidity
+// 1. Add new admin key
+adapter.addAdmin(newAdminKey);
+
+// 2. Verify new admin can access functions
+require(adapter.isAdmin(newAdminKey), "New admin not added");
+
+// 3. Remove old admin key (from new admin or multi-sig)
+adapter.removeAdmin(oldAdminKey);
+```
+
+### Governance Integration
+
+Transitioning to governance-controlled admin:
+
+```solidity
+// 1. Deploy governance contract
+// 2. Add governance contract as admin
+adapter.addAdmin(governanceContract);
+
+// 3. After testing, remove EOA admins
+adapter.removeAdmin(initialAdmin);
+```
+
+### Emergency Admin Addition
+
+In case all admins lose access:
+
+- **Problem**: No admin recovery mechanism exists in the contract
+- **Prevention**: Always maintain multiple admins
+- **Recommendation**: Use multi-signature wallets with backup signers
+- **Last resort**: Contract upgrade or redeployment may be necessary
+
+---
+
+## Access Control Flow
+
+### Admin-Protected Functions
+
+The following functions require `onlyAdmin` access:
+
+- `flag(bytes32 questionID)`
+- `unflag(bytes32 questionID)`
+- `reset(bytes32 questionID)`
+- `resolveManually(bytes32 questionID, uint256[] calldata payouts)`
+- `pause(bytes32 questionID)`
+- `unpause(bytes32 questionID)`
+- `addAdmin(address admin)`
+- `removeAdmin(address admin)`
+- `renounceAdmin()`
+
+### Access Control Check
+
+```solidity
+function exampleAdminFunction() external onlyAdmin {
+    // 1. onlyAdmin modifier checks: admins[msg.sender] == 1
+    // 2. If check fails: revert NotAdmin()
+    // 3. If check passes: function executes
+}
+```
+
+---
+
+## Events
+
+The Auth contract emits events for all admin changes:
+
+### NewAdmin
+
+```solidity
+event NewAdmin(address indexed addedBy, address indexed newAdmin);
+```
+
+Emitted when a new admin is added.
+
+**Parameters:**
+- `addedBy` - The admin who added the new admin
+- `newAdmin` - The address granted admin privileges
+
+### RemovedAdmin
+
+```solidity
+event RemovedAdmin(address indexed removedBy, address indexed admin);
+```
+
+Emitted when an admin is removed or renounced.
+
+**Parameters:**
+- `removedBy` - The admin who removed the admin (or self for renounce)
+- `admin` - The address that lost admin privileges
+
+---
+
+## Security Considerations
+
+### Critical Admin Responsibilities
+
+Admins have significant power and should:
+
+1. **Protect private keys**: Use hardware wallets for admin accounts
+2. **Use multi-signature**: Require multiple approvals for sensitive operations
+3. **Monitor admin activity**: Watch for unauthorized admin changes
+4. **Document all actions**: Maintain audit trail of admin operations
+5. **Follow governance**: Adhere to established governance procedures
+
+### Attack Vectors
+
+**Compromised Admin Key**
+- An attacker with admin access can:
+  - Manually resolve questions with arbitrary payouts (after flagging + safety period)
+  - Pause/unpause questions
+  - Add/remove other admins
+- **Mitigation**: Use multi-signature wallets, key rotation, monitoring
+
+**Admin Key Loss**
+- Losing all admin keys means:
+  - No manual intervention possible
+  - Cannot handle emergency situations
+  - May need contract upgrade or redeployment
+- **Mitigation**: Multiple admin backups, multi-sig with backup signers
+
+**Malicious Admin**
+- A malicious admin could:
+  - Flag and manually resolve questions incorrectly (after safety period)
+  - Remove other admins (if not using multi-sig)
+  - Pause legitimate questions
+- **Mitigation**: Governance oversight, time delays, multi-sig requirements
+
+### Recommendations
+
+1. **Never use EOA as sole admin in production**: Always use multi-signature wallets
+2. **Maintain 3+ admins**: Redundancy protects against key loss
+3. **Implement governance**: Use DAO or governance contract for admin decisions
+4. **Monitor on-chain events**: Watch for unexpected admin changes
+5. **Regular security audits**: Review admin actions and access control
+6. **Document procedures**: Clear guidelines for admin operations
+7. **Key rotation policy**: Regularly rotate admin keys for security

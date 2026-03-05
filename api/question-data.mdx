@@ -1,0 +1,137 @@
+---
+title: 'QuestionData'
+description: 'Data structure representing a question in the UMA CTF Adapter'
+---
+
+## Overview
+
+The `QuestionData` struct stores all the parameters and state information for a question initialized in the UMA CTF Adapter. This struct is stored in the `questions` mapping indexed by `questionID` (computed as `keccak256(ancillaryData)`).
+
+## Struct Definition
+
+```solidity
+struct QuestionData {
+    uint256 requestTimestamp;
+    uint256 reward;
+    uint256 proposalBond;
+    uint256 liveness;
+    uint256 manualResolutionTimestamp;
+    bool resolved;
+    bool paused;
+    bool reset;
+    bool refund;
+    address rewardToken;
+    address creator;
+    bytes ancillaryData;
+}
+```
+
+## Fields
+
+<ResponseField name="requestTimestamp" type="uint256">
+  Request timestamp, set when a request is made to the Optimistic Oracle. Used to identify the request and NOT used by the DVM to determine validity. This timestamp is updated when a question is reset.
+</ResponseField>
+
+<ResponseField name="reward" type="uint256">
+  Reward offered to a successful proposer who provides the correct answer to the Optimistic Oracle. This reward is denominated in the `rewardToken`.
+</ResponseField>
+
+<ResponseField name="proposalBond" type="uint256">
+  Additional bond required by Optimistic Oracle proposers and disputers. If set to 0 during initialization, the default OO bond is used. Higher bonds are recommended for questions securing large amounts of value.
+</ResponseField>
+
+<ResponseField name="liveness" type="uint256">
+  Custom liveness period in seconds for the Optimistic Oracle price request. If set to 0 during initialization, the default liveness period of 2 hours is used. Longer periods are recommended for high-value questions to allow adequate time for disputes.
+</ResponseField>
+
+<ResponseField name="manualResolutionTimestamp" type="uint256">
+  Manual resolution timestamp, set when a market is flagged for manual resolution by an admin. When a question is flagged, this is set to `block.timestamp + SAFETY_PERIOD` (1 hour). A value of 0 indicates the question is not flagged.
+</ResponseField>
+
+<ResponseField name="resolved" type="bool">
+  Flag marking whether a question has been resolved. Once set to true, the question cannot be resolved again and the underlying CTF market has been settled with payouts.
+</ResponseField>
+
+<ResponseField name="paused" type="bool">
+  Flag marking whether a question is paused. When paused, the question cannot be resolved. This can be set through the `pause()` admin function or automatically when flagging a question.
+</ResponseField>
+
+<ResponseField name="reset" type="bool">
+  Flag marking whether a question has been reset. A question can only be reset once. Resetting occurs when:
+  - A price is disputed in the Optimistic Oracle
+  - An admin manually calls the `reset()` function
+  - The Optimistic Oracle returns an ignore price
+</ResponseField>
+
+<ResponseField name="refund" type="bool">
+  Flag marking whether a question's reward should be refunded to the creator. This is set when a dispute occurs and the reward remains on the Adapter contract. The refund is processed when the question is eventually resolved or manually resolved.
+</ResponseField>
+
+<ResponseField name="rewardToken" type="address">
+  ERC20 token address used for payment of rewards, proposal bonds, and fees. Must be on the collateral whitelist managed by the UMA Finder contract.
+</ResponseField>
+
+<ResponseField name="creator" type="address">
+  The address of the question creator who initiated the question through the `initialize()` function. Rewards are refunded to this address if necessary.
+</ResponseField>
+
+<ResponseField name="ancillaryData" type="bytes">
+  Data used to resolve a condition. This contains the question details and resolution criteria. The `questionID` is computed as `keccak256(ancillaryData)`. The ancillary data is appended with the creator address during initialization and must not exceed `MAX_ANCILLARY_DATA` (8139 bytes).
+</ResponseField>
+
+## Usage
+
+### Retrieving QuestionData
+
+You can retrieve the full `QuestionData` struct for a question using the `getQuestion()` function:
+
+```solidity
+QuestionData memory data = umaCtfAdapter.getQuestion(questionID);
+```
+
+### Accessing Individual Fields
+
+The `questions` mapping is public, allowing direct access to individual fields:
+
+```solidity
+uint256 timestamp = umaCtfAdapter.questions(questionID).requestTimestamp;
+bool isResolved = umaCtfAdapter.questions(questionID).resolved;
+address creator = umaCtfAdapter.questions(questionID).creator;
+```
+
+### Question States
+
+A question's state can be determined by examining its fields:
+
+- **Initialized**: `ancillaryData.length > 0`
+- **Flagged**: `manualResolutionTimestamp > 0`
+- **Ready to resolve**: Initialized, not paused, not resolved, and has a price available from the OO
+- **Resolved**: `resolved == true`
+- **Paused**: `paused == true`
+- **Reset**: `reset == true`
+
+Use the helper view functions for cleaner state checks:
+- `isInitialized(questionID)` - Check if initialized
+- `isFlagged(questionID)` - Check if flagged
+- `ready(questionID)` - Check if ready to resolve
+
+## Example
+
+Here's an example of a complete QuestionData struct after initialization:
+
+```solidity
+QuestionData({
+    requestTimestamp: 1709654400,           // Block timestamp when initialized
+    reward: 1000000000000000000,            // 1 token (18 decimals)
+    proposalBond: 5000000000000000000,      // 5 tokens
+    liveness: 7200,                          // 2 hours
+    manualResolutionTimestamp: 0,            // Not flagged
+    resolved: false,                         // Not yet resolved
+    paused: false,                           // Not paused
+    reset: false,                            // Not reset
+    refund: false,                           // No refund pending
+    rewardToken: 0x...,                      // ERC20 token address
+    creator: 0x...,                          // Question creator address
+    ancillaryData: 0x...                     // Encoded question data
+})
+```

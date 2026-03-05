@@ -1,0 +1,560 @@
+---
+title: 'Troubleshooting'
+description: 'Common issues, error messages, and debugging tips for the UMA CTF Adapter'
+---
+
+## Common Errors
+
+The UMA CTF Adapter uses custom errors for gas efficiency and clarity. Below are all error conditions defined in `IUmaCtfAdapter.sol`:
+
+### NotInitialized
+
+```solidity
+error NotInitialized();
+```
+
+**When it occurs:**
+- Calling `resolve()`, `flag()`, `reset()`, `pause()`, or `getExpectedPayouts()` on a question that hasn't been initialized
+- The `questionID` doesn't exist in the adapter
+
+**How to fix:**
+- Verify the `questionID` is correct
+- Check that `initialize()` was called successfully
+- Query `isInitialized(questionID)` to confirm state
+
+**Check initialization:**
+```solidity
+bool initialized = adapter.isInitialized(questionID);
+if (!initialized) {
+    // Question doesn't exist
+}
+```
+
+### Initialized
+
+```solidity
+error Initialized();
+```
+
+**When it occurs:**
+- Attempting to call `initialize()` with ancillary data that produces an existing `questionID`
+- The questionID is derived from `keccak256(ancillaryData)`, so duplicate ancillary data causes this error
+
+**How to fix:**
+- Use unique ancillary data for each question
+- Remember that ancillary data includes the creator address appended by the contract
+- If you need to re-ask a question, use different ancillary data (e.g., add a nonce or timestamp)
+
+### Resolved
+
+```solidity
+error Resolved();
+```
+
+**When it occurs:**
+- Calling `resolve()`, `flag()`, `reset()`, or `pause()` on an already resolved question
+- Question has `resolved = true` in storage
+
+**How to fix:**
+- Check resolution status before attempting operations
+- Resolved questions are immutable and cannot be modified
+
+**Check resolution:**
+```solidity
+QuestionData memory question = adapter.getQuestion(questionID);
+if (question.resolved) {
+    // Already resolved, cannot modify
+}
+```
+
+### Paused
+
+```solidity
+error Paused();
+```
+
+**When it occurs:**
+- Calling `resolve()` or `getExpectedPayouts()` on a paused question
+- Questions are paused when `pause()` or `flag()` is called
+
+**How to fix:**
+- Wait for an admin to call `unpause()` or `unflag()`
+- Check pause status before attempting resolution
+
+**Check pause status:**
+```solidity
+QuestionData memory question = adapter.getQuestion(questionID);
+if (question.paused) {
+    // Paused, resolution blocked
+}
+```
+
+### Flagged
+
+```solidity
+error Flagged();
+```
+
+**When it occurs:**
+- Calling `flag()` on an already flagged question
+- Calling `getExpectedPayouts()` on a flagged question
+
+**How to fix:**
+- Check flagged status using `isFlagged(questionID)`
+- Wait for admin to resolve manually or unflag
+
+### NotFlagged
+
+```solidity
+error NotFlagged();
+```
+
+**When it occurs:**
+- Calling `unflag()` on a question that isn't flagged
+
+**How to fix:**
+- Verify the question is actually flagged before attempting to unflag
+
+### NotReadyToResolve
+
+```solidity
+error NotReadyToResolve();
+```
+
+**When it occurs:**
+- Calling `resolve()` when the Optimistic Oracle hasn't settled the price yet
+- The OO liveness period hasn't expired
+- No proposer has submitted a price
+
+**How to fix:**
+- Check `ready(questionID)` before calling `resolve()`
+- Wait for the liveness period to pass after a proposal
+- Ensure a price has been proposed on the OO
+
+**Check readiness:**
+```solidity
+if (!adapter.ready(questionID)) {
+    // Not ready: either no price, paused, or already resolved
+}
+```
+
+**Implementation reference** (UmaCtfAdapter.sol:299-304):
+```solidity
+function _ready(QuestionData storage questionData) internal view returns (bool) {
+    if (!_isInitialized(questionData)) return false;
+    if (questionData.paused) return false;
+    if (questionData.resolved) return false;
+    return _hasPrice(questionData);
+}
+```
+
+### PriceNotAvailable
+
+```solidity
+error PriceNotAvailable();
+```
+
+**When it occurs:**
+- Calling `getExpectedPayouts()` when the OO hasn't settled a price
+- Similar to `NotReadyToResolve` but for read-only operations
+
+**How to fix:**
+- Wait for the OO to settle the price
+- Check `ready(questionID)` first
+
+### UnsupportedToken
+
+```solidity
+error UnsupportedToken();
+```
+
+**When it occurs:**
+- Calling `initialize()` with a `rewardToken` not on the UMA collateral whitelist
+- The token address is not approved by UMA governance
+
+**How to fix:**
+- Use a whitelisted token (typically USDC, WETH, or other major tokens)
+- Check the UMA collateral whitelist contract
+- Query whitelist status:
+
+```solidity
+address token = 0x...; // Your reward token
+bool isWhitelisted = collateralWhitelist.isOnWhitelist(token);
+```
+
+**Common whitelisted tokens:**
+- USDC: `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` (Ethereum)
+- Check UMA documentation for network-specific addresses
+
+### InvalidAncillaryData
+
+```solidity
+error InvalidAncillaryData();
+```
+
+**When it occurs:**
+- Ancillary data is empty (length = 0)
+- Ancillary data exceeds maximum length (8139 bytes after appending creator)
+
+**How to fix:**
+- Provide non-empty ancillary data
+- Keep ancillary data under ~8100 bytes to account for creator address append
+- The contract appends the creator address, so total length = `ancillaryData.length + creator_address_bytes`
+
+**Maximum length** (UmaCtfAdapter.sol:46):
+```solidity
+uint256 public constant MAX_ANCILLARY_DATA = 8139;
+```
+
+### NotOptimisticOracle
+
+```solidity
+error NotOptimisticOracle();
+```
+
+**When it occurs:**
+- An address other than the Optimistic Oracle calls `priceDisputed()` callback
+- This is a security check to prevent unauthorized resets
+
+**How to fix:**
+- This error shouldn't occur in normal operation
+- If you see this, investigate for potential attack attempts
+- Only the OO contract should call the dispute callback
+
+### InvalidOOPrice
+
+```solidity
+error InvalidOOPrice();
+```
+
+**When it occurs:**
+- The Optimistic Oracle returns a price that isn't 0, 0.5 ether, or 1 ether
+- This indicates an invalid YES_OR_NO_QUERY response
+
+**Valid prices** (UmaCtfAdapter.sol:464-465):
+- `0` = NO
+- `0.5 ether` = UNKNOWN/TIE
+- `1 ether` = YES
+
+**How to fix:**
+- This shouldn't happen with correct OO setup
+- If it occurs, flag the question for manual resolution
+- Investigate the OO proposal and dispute process
+
+### InvalidPayouts
+
+```solidity
+error InvalidPayouts();
+```
+
+**When it occurs:**
+- Admin calls `resolveManually()` with an invalid payout array
+- Payout array doesn't pass validation (wrong length or invalid values)
+
+**Valid payout arrays:**
+- Must be length 2: `[YES_payout, NO_payout]`
+- Valid combinations: `[0, 1]`, `[1, 0]`, or `[1, 1]`
+
+**How to fix:**
+- Ensure payout array has exactly 2 elements
+- Use only 0 or 1 as payout values
+- Follow the pattern: `[YES_outcome, NO_outcome]`
+
+### SafetyPeriodNotPassed
+
+```solidity
+error SafetyPeriodNotPassed();
+```
+
+**When it occurs:**
+- Admin calls `resolveManually()` before the safety period (1 hour) has elapsed
+- The safety period starts when `flag()` is called
+
+**How to fix:**
+- Wait for 1 hour after flagging before manually resolving
+- Check `manualResolutionTimestamp` in the question data
+
+**Safety period** (UmaCtfAdapter.sol:38):
+```solidity
+uint256 public constant SAFETY_PERIOD = 1 hours;
+```
+
+### SafetyPeriodPassed
+
+```solidity
+error SafetyPeriodPassed();
+```
+
+**When it occurs:**
+- Admin calls `unflag()` after the safety period has passed
+- Once the safety period expires, the question must be manually resolved
+
+**How to fix:**
+- Unflag questions within 1 hour of flagging, or
+- Proceed with manual resolution using `resolveManually()`
+
+## Debugging Tips
+
+### 1. Check Question State
+
+Always fetch the full question data when debugging:
+
+```solidity
+QuestionData memory question = adapter.getQuestion(questionID);
+
+console.log("Request Timestamp:", question.requestTimestamp);
+console.log("Resolved:", question.resolved);
+console.log("Paused:", question.paused);
+console.log("Reset:", question.reset);
+console.log("Refund:", question.refund);
+console.log("Manual Resolution Time:", question.manualResolutionTimestamp);
+```
+
+### 2. Verify Optimistic Oracle State
+
+Check the corresponding OO request:
+
+```solidity
+IOptimisticOracleV2.Request memory ooRequest = optimisticOracle.getRequest(
+    address(adapter),
+    YES_OR_NO_IDENTIFIER,
+    question.requestTimestamp,
+    question.ancillaryData
+);
+
+console.log("Proposed:", ooRequest.proposedPrice);
+console.log("Resolved:", ooRequest.resolved);
+console.log("Expiration Time:", ooRequest.expirationTime);
+```
+
+### 3. Monitor Event Logs
+
+Enable event monitoring to track state changes:
+
+```javascript
+const adapter = new ethers.Contract(address, abi, provider);
+
+// Log all events
+adapter.on('*', (event) => {
+  console.log('Event emitted:', event);
+});
+
+// Specific debugging listeners
+adapter.on('QuestionReset', (questionID) => {
+  console.warn('Question reset - possible dispute or ignore price');
+});
+
+adapter.on('QuestionFlagged', (questionID) => {
+  console.warn('Question flagged for manual resolution');
+});
+```
+
+### 4. Test Transaction Before Sending
+
+Use `callStatic` to preview transaction outcomes:
+
+```javascript
+try {
+  await adapter.callStatic.resolve(questionID);
+  console.log('Resolution will succeed');
+} catch (error) {
+  console.error('Resolution will fail:', error.reason);
+}
+```
+
+### 5. Check Token Approvals
+
+If initialization fails with token transfers:
+
+```solidity
+IERC20 token = IERC20(rewardToken);
+uint256 allowance = token.allowance(msg.sender, address(adapter));
+uint256 balance = token.balanceOf(msg.sender);
+
+require(allowance >= reward, "Insufficient allowance");
+require(balance >= reward, "Insufficient balance");
+```
+
+### 6. Decode Ancillary Data
+
+When debugging ancillary data issues:
+
+```javascript
+const ancillaryData = question.ancillaryData;
+const decodedData = ethers.utils.toUtf8String(ancillaryData);
+console.log('Ancillary data:', decodedData);
+```
+
+## Common Scenarios
+
+### Question Won't Resolve
+
+**Symptoms:** `resolve()` call fails or reverts
+
+**Checklist:**
+1. ✅ Check `ready(questionID)` returns `true`
+2. ✅ Verify question is not paused: `question.paused == false`
+3. ✅ Confirm OO has price: `optimisticOracle.hasPrice(...)`
+4. ✅ Ensure liveness period has passed
+5. ✅ Check question isn't already resolved: `question.resolved == false`
+
+**Debug script:**
+```javascript
+const isReady = await adapter.ready(questionID);
+const question = await adapter.getQuestion(questionID);
+
+console.log('Ready:', isReady);
+console.log('Paused:', question.paused);
+console.log('Resolved:', question.resolved);
+
+if (!isReady) {
+  // Check OO
+  const hasPrice = await optimisticOracle.hasPrice(
+    adapter.address,
+    YES_OR_NO_IDENTIFIER,
+    question.requestTimestamp,
+    question.ancillaryData
+  );
+  console.log('OO has price:', hasPrice);
+}
+```
+
+### Question Was Reset Unexpectedly
+
+**Possible causes:**
+1. **Dispute occurred** - Someone disputed the proposed price
+   - Check for `priceDisputed` callback in OO logs
+   - Review dispute details on UMA voter dashboard
+
+2. **Ignore price returned** - OO returned `type(int256).min`
+   - Indicates the question should be ignored/skipped
+   - Question will reset and request a new price
+
+3. **Admin called reset()** - Manual failsafe invocation
+   - Check for `QuestionReset` event with admin as transaction sender
+
+**Investigation:**
+```javascript
+const resetEvents = await adapter.queryFilter(
+  adapter.filters.QuestionReset(questionID)
+);
+
+resetEvents.forEach(event => {
+  console.log('Reset at block:', event.blockNumber);
+  console.log('Transaction:', event.transactionHash);
+});
+```
+
+### Manual Resolution Required
+
+**When flagged:**
+- Admin has called `flag(questionID)`
+- `manualResolutionTimestamp` is set
+- Question is paused
+
+**Resolution process:**
+1. Wait for safety period (1 hour from flagging)
+2. Determine correct outcome off-chain
+3. Call `resolveManually(questionID, payouts)`
+
+**Example:**
+```solidity
+// Resolve as YES
+uint256[] memory payouts = new uint256[](2);
+payouts[0] = 1; // YES
+payouts[1] = 0; // NO
+
+adapter.resolveManually(questionID, payouts);
+```
+
+### Token Transfer Failures
+
+**Common causes:**
+1. **Insufficient allowance** - Approve the adapter as spender
+   ```javascript
+   await rewardToken.approve(adapter.address, reward);
+   ```
+
+2. **Insufficient balance** - Ensure creator has enough tokens
+   ```javascript
+   const balance = await rewardToken.balanceOf(creator);
+   console.log('Balance:', balance.toString());
+   ```
+
+3. **Token not whitelisted** - Use a UMA-approved token
+   ```javascript
+   const isWhitelisted = await collateralWhitelist.isOnWhitelist(tokenAddress);
+   ```
+
+### Multiple Questions with Same Data
+
+**Issue:** Getting `Initialized()` error for what seems like a unique question
+
+**Cause:** `questionID = keccak256(ancillaryData)`, and ancillary data includes the creator address appended by the contract
+
+**Solution:** 
+- Even with the same question text, different creators get different questionIDs
+- If the same creator needs to ask the same question twice, add a nonce:
+  ```javascript
+  const ancillaryData = ethers.utils.toUtf8Bytes(
+    `Q: Will X happen? Nonce: ${Date.now()}`
+  );
+  ```
+
+## Gas Optimization Issues
+
+### High Gas Costs on Initialize
+
+**Causes:**
+- Large ancillary data (approaching 8139 byte limit)
+- First-time token approval requires additional gas
+- CTF condition preparation
+
+**Optimization:**
+- Keep ancillary data concise (reference external data via hash/URL)
+- Pre-approve tokens in separate transaction
+- Batch multiple initializations if possible
+
+### Failed Transaction Due to Gas Limit
+
+**Solution:**
+```javascript
+const gasEstimate = await adapter.estimateGas.resolve(questionID);
+const tx = await adapter.resolve(questionID, {
+  gasLimit: gasEstimate.mul(120).div(100) // 20% buffer
+});
+```
+
+## Getting Help
+
+### Diagnostic Information to Collect
+
+When reporting issues, include:
+
+1. **Question ID** and transaction hash
+2. **Question state** from `getQuestion()`
+3. **Event logs** for the question
+4. **OO request state** from `optimisticOracle.getRequest()`
+5. **Network** and **block number**
+6. **Error message** or revert reason
+
+### Useful View Functions
+
+```solidity
+// Check all question parameters
+adapter.getQuestion(questionID)
+
+// Check specific states
+adapter.isInitialized(questionID)
+adapter.isFlagged(questionID)
+adapter.ready(questionID)
+
+// Get expected outcome (if available)
+adapter.getExpectedPayouts(questionID)
+```
+
+## See Also
+
+- [Monitoring Events](/operations/monitoring-events) - Event tracking and interpretation
+- [Market States](/operations/market-states) - State transitions and flow
+- [Errors](/api/errors) - Complete error catalog

@@ -1,0 +1,212 @@
+---
+title: Official Deployments
+description: UMA CTF Adapter contract addresses on Polygon and test networks
+---
+
+The UMA CTF Adapter has been deployed to multiple networks. All deployments have been audited by OpenZeppelin.
+
+## Latest Version (v3.1.0)
+
+Released on August 25, 2023
+
+<CardGroup cols={3}>
+  <Card title="Polygon" icon="ethereum">
+    **Mainnet Production**
+    
+    [`0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49`](https://polygonscan.com/address/0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49)
+  </Card>
+  <Card title="Mumbai" icon="flask">
+    **Testnet (Deprecated)**
+    
+    [`0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49`](https://mumbai.polygonscan.com/address/0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49)
+  </Card>
+  <Card title="Amoy" icon="flask">
+    **Testnet**
+    
+    [`0x2F6f8DA6A21023E62399801945eed1b1975A4e12`](https://amoy.polygonscan.com/address/0x2F6f8DA6A21023E62399801945eed1b1975A4e12)
+  </Card>
+</CardGroup>
+
+<Warning>
+Mumbai testnet is deprecated. Use Amoy for testing new integrations.
+</Warning>
+
+## Deployment Details
+
+### Network Information
+
+| Network | Chain ID | Deployment Address | Block Explorer |
+|---------|----------|-------------------|----------------|
+| Polygon | 137 | `0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49` | [Polygonscan](https://polygonscan.com/address/0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49) |
+| Mumbai | 80001 | `0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49` | [Mumbai Polygonscan](https://mumbai.polygonscan.com/address/0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49) |
+| Amoy | 80002 | `0x2F6f8DA6A21023E62399801945eed1b1975A4e12` | [Amoy Polygonscan](https://amoy.polygonscan.com/address/0x2F6f8DA6A21023E62399801945eed1b1975A4e12) |
+
+## Security Audit
+
+<Card title="OpenZeppelin Security Audit" icon="shield-check" href="https://github.com/Polymarket/uma-ctf-adapter/blob/main/audit/Polymarket_UMA_Optimistic_Oracle_Adapter_Audit.pdf">
+  The UMA CTF Adapter has been audited by OpenZeppelin. The full audit report is available in the repository.
+</Card>
+
+All findings from the audit have been addressed in version 3.1.0:
+- High severity issues (H01)
+- Medium severity issues (M01, M02, M03)
+- Low severity issues (L01, L02, L03)
+- Informational issues (N01-N05)
+
+## Release History
+
+<AccordionGroup>
+  <Accordion title="v3.1.0 (Latest) - August 25, 2023">
+    **Major Updates:**
+    - Security fixes addressing all OpenZeppelin audit findings
+    - Added support for Amoy testnet
+    - Improved external interface pragma handling
+    - Various code quality improvements
+    
+    **Deployments:**
+    - Polygon: `0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49`
+    - Mumbai: `0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49`
+    - Amoy: `0x2F6f8DA6A21023E62399801945eed1b1975A4e12`
+    
+    [View Release](https://github.com/Polymarket/uma-ctf-adapter/releases/tag/v3.1.0)
+  </Accordion>
+  
+  <Accordion title="v3.0.0 - May 31, 2023">
+    **Major Updates:**
+    - Breaking changes to contract interface
+    - Enhanced market reset functionality
+    - Improved dispute handling
+    
+    [View Release](https://github.com/Polymarket/uma-ctf-adapter/releases/tag/v3.0.0)
+  </Accordion>
+  
+  <Accordion title="v2.0.0 - October 28, 2022">
+    **Major Updates:**
+    - Major architectural improvements
+    - Gas optimizations
+    
+    [View Release](https://github.com/Polymarket/uma-ctf-adapter/releases/tag/v2.0.0)
+  </Accordion>
+  
+  <Accordion title="v1.0.1 - June 21, 2022">
+    **Bug Fixes:**
+    - Minor bug fixes and improvements
+    
+    [View Release](https://github.com/Polymarket/uma-ctf-adapter/releases/tag/v1.0.1)
+  </Accordion>
+  
+  <Accordion title="v1.0.0 - June 17, 2022">
+    **Initial Release:**
+    - First production deployment
+    - Core functionality for UMA-based market resolution
+    
+    [View Release](https://github.com/Polymarket/uma-ctf-adapter/releases/tag/v1.0.0)
+  </Accordion>
+</AccordionGroup>
+
+## Verify Deployment
+
+You can verify the deployed contract matches the source code:
+
+### Using Cast
+
+```bash
+# Get deployed bytecode
+cast code 0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49 --rpc-url https://polygon-rpc.com
+
+# Check contract interfaces
+cast interface 0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49 --rpc-url https://polygon-rpc.com
+```
+
+### Read Contract State
+
+```bash
+# Check immutable variables
+cast call 0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49 "ctf()" --rpc-url https://polygon-rpc.com
+cast call 0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49 "optimisticOracle()" --rpc-url https://polygon-rpc.com
+cast call 0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49 "collateralWhitelist()" --rpc-url https://polygon-rpc.com
+```
+
+### Check Constants
+
+```bash
+# Query contract constants
+cast call 0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49 "SAFETY_PERIOD()" --rpc-url https://polygon-rpc.com
+cast call 0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49 "YES_OR_NO_IDENTIFIER()" --rpc-url https://polygon-rpc.com
+cast call 0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49 "MAX_ANCILLARY_DATA()" --rpc-url https://polygon-rpc.com
+```
+
+## Deploy Your Own
+
+To deploy the adapter to your own network or fork:
+
+<Steps>
+  <Step title="Configure Environment">
+    Create a `.env` file with your deployment parameters:
+    
+    ```bash
+    PK=your_private_key
+    ADMIN=your_admin_address
+    CTF=conditional_tokens_address
+    FINDER=uma_finder_address
+    OPTIMISTIC_ORACLE=uma_oo_address
+    RPC_URL=your_rpc_url
+    ```
+  </Step>
+  
+  <Step title="Run Deployment Script">
+    Execute the deployment script:
+    
+    ```bash
+    cd deploy/scripts
+    ./deploy_adapter.sh
+    ```
+  </Step>
+  
+  <Step title="Verify Contract">
+    Verify the contract on the block explorer:
+    
+    ```bash
+    forge verify-contract \
+      --chain-id YOUR_CHAIN_ID \
+      --compiler-version v0.8.15+commit.e14f2714 \
+      --optimizer-runs 1000000 \
+      YOUR_DEPLOYED_ADDRESS \
+      src/UmaCtfAdapter.sol:UmaCtfAdapter \
+      --constructor-args $(cast abi-encode "constructor(address,address,address)" $CTF $FINDER $OPTIMISTIC_ORACLE) \
+      --etherscan-api-key $ETHERSCAN_API_KEY
+    ```
+  </Step>
+  
+  <Step title="Configure Admin">
+    The deployment script automatically configures the admin address specified in your `.env` file.
+  </Step>
+</Steps>
+
+<Note>
+Make sure you have the correct UMA contract addresses for your target network. See the [Configuration](/deployment/configuration) page for details.
+</Note>
+
+## Integration Testing
+
+Before integrating with production deployments, test your integration on Amoy testnet:
+
+1. **Get Test Tokens**: Use a Polygon faucet to get test MATIC
+2. **Deploy Test Market**: Initialize a test question using the Amoy deployment
+3. **Test Resolution Flow**: Propose and resolve your test market
+4. **Verify Results**: Ensure payouts are distributed correctly
+
+<Tip>
+The Amoy testnet deployment (`0x2F6f8DA6A21023E62399801945eed1b1975A4e12`) is ideal for integration testing before going to production.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Initialize Markets" icon="play" href="/integration/initializing-markets">
+    Learn how to initialize prediction markets
+  </Card>
+  <Card title="Resolve Markets" icon="check" href="/integration/resolving-markets">
+    Understand the market resolution process
+  </Card>
+</CardGroup>

@@ -1,0 +1,226 @@
+---
+title: IConditionalTokens
+description: Interface for the Gnosis Conditional Tokens Framework
+---
+
+The `IConditionalTokens` interface defines the core functionality for interacting with the Gnosis Conditional Tokens Framework, which enables the creation and trading of conditional outcome tokens.
+
+## Overview
+
+Conditional Tokens are ERC-1155 tokens that represent positions on different outcomes of a condition. The framework allows:
+
+- Preparing conditions with multiple outcome slots
+- Splitting collateral into conditional tokens
+- Merging conditional tokens back into collateral
+- Resolving conditions with payout vectors
+- Redeeming tokens based on resolved outcomes
+
+## State Variables
+
+### payoutNumerators
+
+Mapping of condition ID to payout numerators.
+
+```solidity
+function payoutNumerators(bytes32) external returns (uint256[] memory);
+```
+
+The value represents numerators of the payout vector associated with the condition. This array is initialized with a length equal to the outcome slot count. For example, a condition with 3 outcomes [A, B, C] where two are correct would be represented as [0.5, 0.5, 0]. Since Ethereum has no decimal values, 0.5 is represented by fractions like 1/2. Payout numerators are also used to check initialization - if the array is empty (length zero), the condition was not created/prepared.
+
+### payoutDenominator
+
+Returns the payout denominator for a condition.
+
+```solidity
+function payoutDenominator(bytes32) external returns (uint256);
+```
+
+The denominator is used for checking if the condition has been resolved. If the denominator is non-zero, the condition has been resolved.
+
+## Core Functions
+
+### prepareCondition
+
+Prepares a condition by initializing a payout vector.
+
+```solidity
+function prepareCondition(
+    address oracle,
+    bytes32 questionId,
+    uint256 outcomeSlotCount
+) external;
+```
+
+#### Parameters
+
+- `oracle` - The account assigned to report the result for the prepared condition.
+- `questionId` - An identifier for the question to be answered by the oracle.
+- `outcomeSlotCount` - The number of outcome slots which should be used for this condition. Must not exceed 256.
+
+### reportPayouts
+
+Called by the oracle to report results of conditions.
+
+```solidity
+function reportPayouts(
+    bytes32 questionId,
+    uint256[] calldata payouts
+) external;
+```
+
+Sets the payout vector for the condition with ID `keccak256(abi.encodePacked(oracle, questionId, outcomeSlotCount))`, where oracle is the message sender, questionId is one of the parameters, and outcomeSlotCount is the length of the payouts parameter.
+
+#### Parameters
+
+- `questionId` - The question ID the oracle is answering for.
+- `payouts` - The oracle's answer (payout numerators for each outcome slot).
+
+### splitPosition
+
+Splits a position into conditional tokens.
+
+```solidity
+function splitPosition(
+    IERC20 collateralToken,
+    bytes32 parentCollectionId,
+    bytes32 conditionId,
+    uint256[] calldata partition,
+    uint256 amount
+) external;
+```
+
+If splitting from collateral, this contract will attempt to transfer `amount` collateral from the message sender to itself. Otherwise, it will burn `amount` stake held by the message sender in the position being split. If successful, `amount` stake will be minted in the split target positions.
+
+#### Parameters
+
+- `collateralToken` - The address of the positions' backing collateral token.
+- `parentCollectionId` - The ID of the outcome collections common to the position being split and the split target positions. May be null, in which only the collateral is shared.
+- `conditionId` - The ID of the condition to split on.
+- `partition` - An array of disjoint index sets representing a nontrivial partition of the outcome slots. For example, A|B and C but not A|B and B|C (not disjoint). Each element is a number which, together with the condition, represents the outcome collection. For example, 0b110 is A|B, 0b010 is B, etc.
+- `amount` - The amount of collateral or stake to split.
+
+### mergePositions
+
+Merges conditional token positions back together.
+
+```solidity
+function mergePositions(
+    IERC20 collateralToken,
+    bytes32 parentCollectionId,
+    bytes32 conditionId,
+    uint256[] calldata partition,
+    uint256 amount
+) external;
+```
+
+#### Parameters
+
+- `collateralToken` - The address of the positions' backing collateral token.
+- `parentCollectionId` - The ID of the outcome collections common to the positions being merged.
+- `conditionId` - The ID of the condition to merge on.
+- `partition` - An array of disjoint index sets representing the partition.
+- `amount` - The amount of stake to merge.
+
+### redeemPositions
+
+Redeems conditional tokens for collateral after condition resolution.
+
+```solidity
+function redeemPositions(
+    IERC20 collateralToken,
+    bytes32 parentCollectionId,
+    bytes32 conditionId,
+    uint256[] calldata indexSets
+) external;
+```
+
+#### Parameters
+
+- `collateralToken` - The collateral token backing the positions.
+- `parentCollectionId` - The parent collection ID.
+- `conditionId` - The ID of the resolved condition.
+- `indexSets` - Index sets of the positions to redeem.
+
+## View Functions
+
+### getOutcomeSlotCount
+
+Gets the outcome slot count of a condition.
+
+```solidity
+function getOutcomeSlotCount(bytes32 conditionId) external view returns (uint256);
+```
+
+#### Parameters
+
+- `conditionId` - ID of the condition.
+
+#### Returns
+
+- `uint256` - Number of outcome slots associated with the condition, or zero if the condition has not been prepared yet.
+
+### getConditionId
+
+Constructs a condition ID from oracle, question ID, and outcome slot count.
+
+```solidity
+function getConditionId(
+    address oracle,
+    bytes32 questionId,
+    uint256 outcomeSlotCount
+) external pure returns (bytes32);
+```
+
+#### Parameters
+
+- `oracle` - The account assigned to report the result for the prepared condition.
+- `questionId` - An identifier for the question to be answered by the oracle.
+- `outcomeSlotCount` - The number of outcome slots which should be used for this condition. Must not exceed 256.
+
+#### Returns
+
+- `bytes32` - The computed condition ID.
+
+### getCollectionId
+
+Constructs an outcome collection ID from a parent collection and an outcome collection.
+
+```solidity
+function getCollectionId(
+    bytes32 parentCollectionId,
+    bytes32 conditionId,
+    uint256 indexSet
+) external view returns (bytes32);
+```
+
+#### Parameters
+
+- `parentCollectionId` - Collection ID of the parent outcome collection, or bytes32(0) if there's no parent.
+- `conditionId` - Condition ID of the outcome collection to combine with the parent outcome collection.
+- `indexSet` - Index set of the outcome collection to combine with the parent outcome collection.
+
+#### Returns
+
+- `bytes32` - The computed collection ID.
+
+### getPositionId
+
+Constructs a position ID from a collateral token and an outcome collection.
+
+```solidity
+function getPositionId(
+    IERC20 collateralToken,
+    bytes32 collectionId
+) external pure returns (uint256);
+```
+
+These IDs are used as the ERC-1155 ID for this contract.
+
+#### Parameters
+
+- `collateralToken` - Collateral token which backs the position.
+- `collectionId` - ID of the outcome collection associated with this position.
+
+#### Returns
+
+- `uint256` - The computed position ID (ERC-1155 token ID).

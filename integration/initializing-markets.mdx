@@ -1,0 +1,302 @@
+---
+title: 'Initializing Markets'
+description: 'Learn how to initialize prediction markets using the UMA CTF Adapter'
+---
+
+## Overview
+
+Initializing a market creates a new prediction market question and connects it to UMA's Optimistic Oracle for resolution. The `initialize()` function atomically:
+
+1. Registers the question with the adapter
+2. Prepares the condition on the Conditional Tokens Framework (CTF)
+3. Submits a price request to the Optimistic Oracle
+
+## Function Signature
+
+```solidity UmaCtfAdapter.sol
+function initialize(
+    bytes memory ancillaryData,
+    address rewardToken,
+    uint256 reward,
+    uint256 proposalBond,
+    uint256 liveness
+) external returns (bytes32 questionID)
+```
+
+## Parameters
+
+<ParamField path="ancillaryData" type="bytes" required>
+  The question data that proposers will use to determine the correct answer. This should be clear, unambiguous, and contain all information needed to resolve the market.
+  
+  **Requirements:**
+  - Cannot be empty
+  - Total length after appending initializer address must not exceed 8,139 bytes (`MAX_ANCILLARY_DATA`)
+  - The adapter automatically appends `,initializer:<address>` to track the question creator
+</ParamField>
+
+<ParamField path="rewardToken" type="address" required>
+  ERC20 token used for rewards and bonds. Must be whitelisted in UMA's `CollateralWhitelist`.
+  
+  Common options include USDC, USDT, or other stablecoins.
+</ParamField>
+
+<ParamField path="reward" type="uint256" required>
+  Amount of `rewardToken` offered to successful proposers.
+  
+  **Considerations:**
+  - Set to `0` for no reward (only final fee applies)
+  - Higher rewards incentivize faster proposals
+  - Caller must approve the adapter to spend `reward` amount if non-zero
+</ParamField>
+
+<ParamField path="proposalBond" type="uint256" required>
+  Additional bond required from proposers/disputers beyond the default Optimistic Oracle bond.
+  
+  **Considerations:**
+  - Set to `0` to use default OO bond
+  - Higher bonds for markets securing larger value
+  - Acts as a deterrent against incorrect proposals
+</ParamField>
+
+<ParamField path="liveness" type="uint256" required>
+  Challenge period in seconds before a proposal becomes finalized.
+  
+  **Considerations:**
+  - Set to `0` to use default liveness period (2 hours)
+  - Longer periods for high-value markets (recommended: days for large markets)
+  - Allows time for disputers to challenge incorrect proposals
+</ParamField>
+
+## Returns
+
+<ResponseField name="questionID" type="bytes32">
+  Unique identifier for the question, computed as `keccak256(ancillaryData)` after appending the initializer address.
+  
+  Use this ID for all subsequent operations (resolve, pause, etc.)
+</ResponseField>
+
+## Parameter Selection Guide
+
+### Reward Sizing
+
+The reward should incentivize timely proposals while remaining economically efficient:
+
+<CardGroup cols={2}>
+  <Card title="Low Value Markets" icon="dollar-sign">
+    **Reward:** $10-50 USD equivalent
+    
+    Sufficient for markets with < $10,000 in volume
+  </Card>
+  
+  <Card title="High Value Markets" icon="coins">
+    **Reward:** $100-500+ USD equivalent
+    
+    For markets securing significant value or requiring rapid resolution
+  </Card>
+</CardGroup>
+
+### Proposal Bond Sizing
+
+Bonds protect against malicious proposals. Consider the market's total value:
+
+```solidity Example Bond Calculation
+// For a market with $100,000 in volume:
+// Bond should be 1-5% of total value at stake
+uint256 proposalBond = 1000e6; // $1,000 USDC (1% of $100k)
+```
+
+<Warning>
+  **Security Consideration:** Bonds that are too low may not deter malicious actors. For markets securing > $100,000, consider bonds of $1,000+ USD equivalent.
+</Warning>
+
+### Liveness Period Selection
+
+<AccordionGroup>
+  <Accordion title="Default Liveness (0 / 2 hours)">
+    Suitable for:
+    - Low-value markets
+    - Time-sensitive events
+    - Markets with < $10,000 volume
+  </Accordion>
+  
+  <Accordion title="Extended Liveness (1-7 days)">
+    Recommended for:
+    - High-value markets (> $100,000)
+    - Complex questions requiring analysis
+    - Markets where security is paramount
+    
+    ```solidity
+    uint256 liveness = 3 days; // 259200 seconds
+    ```
+  </Accordion>
+  
+  <Accordion title="Maximum Liveness (7+ days)">
+    Use for:
+    - Markets securing millions in value
+    - Questions requiring extensive verification
+    - Critical infrastructure markets
+  </Accordion>
+</AccordionGroup>
+
+## Example Usage
+
+### Basic Initialization
+
+```solidity Basic Market
+address adapter = 0x...; // UmaCtfAdapter address
+address usdc = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+
+// Question: "Will ETH price exceed $3000 by Dec 31, 2024?"
+bytes memory ancillaryData = bytes(
+    "q: Will ETH price exceed $3000 by Dec 31, 2024? "
+    "res_data: p1: 1, p2: 0"
+);
+
+// Approve USDC spending
+IERC20(usdc).approve(adapter, 100e6);
+
+// Initialize with moderate parameters
+bytes32 questionID = IUmaCtfAdapter(adapter).initialize(
+    ancillaryData,
+    usdc,           // rewardToken
+    100e6,          // reward: $100 USDC
+    500e6,          // proposalBond: $500 USDC
+    2 days          // liveness: 2 days
+);
+```
+
+### High-Value Market Initialization
+
+```solidity High-Value Market
+// For a market expected to secure $1M+ in volume
+bytes memory ancillaryData = bytes(
+    "q: Will the US presidential election winner be announced by November 15, 2024? "
+    "res_data: p1: 1, p2: 0"
+);
+
+IERC20(usdc).approve(adapter, 1000e6);
+
+bytes32 questionID = IUmaCtfAdapter(adapter).initialize(
+    ancillaryData,
+    usdc,
+    1000e6,         // reward: $1,000 USDC
+    10000e6,        // proposalBond: $10,000 USDC  
+    7 days          // liveness: 7 days for maximum security
+);
+```
+
+### Zero-Reward Initialization
+
+```solidity Minimal Cost Market
+// Use only the UMA final fee, no additional reward
+bytes32 questionID = IUmaCtfAdapter(adapter).initialize(
+    ancillaryData,
+    usdc,
+    0,              // reward: $0 (only final fee applies)
+    0,              // proposalBond: use default OO bond
+    0               // liveness: use default 2 hours
+);
+```
+
+## State Changes
+
+When `initialize()` is called, the following occurs:
+
+<Steps>
+  <Step title="Validation">
+    - Verifies `rewardToken` is whitelisted
+    - Checks ancillary data is non-empty and within limits
+    - Ensures question hasn't been initialized already
+  </Step>
+  
+  <Step title="Question Storage">
+    Creates `QuestionData` struct in storage with:
+    - `requestTimestamp`: Current block timestamp
+    - `creator`: `msg.sender`
+    - `ancillaryData`: Question data with appended initializer
+    - Reward/bond/liveness parameters
+  </Step>
+  
+  <Step title="CTF Preparation">
+    Calls `ctf.prepareCondition(address(this), questionID, 2)` to register a binary outcome condition
+  </Step>
+  
+  <Step title="Oracle Request">
+    - Transfers reward from caller (if non-zero)
+    - Submits price request to Optimistic Oracle
+    - Configures event-based resolution
+    - Sets dispute callback flag
+    - Applies custom bond/liveness if specified
+  </Step>
+</Steps>
+
+## Error Conditions
+
+<ResponseField name="UnsupportedToken" type="error">
+  The `rewardToken` is not whitelisted by UMA's CollateralWhitelist.
+  
+  **Solution:** Use a whitelisted token (USDC, USDT, etc.)
+</ResponseField>
+
+<ResponseField name="InvalidAncillaryData" type="error">
+  Either:
+  - Ancillary data is empty
+  - Final ancillary data exceeds `MAX_ANCILLARY_DATA` (8,139 bytes)
+  
+  **Solution:** Provide valid, concise question data
+</ResponseField>
+
+<ResponseField name="Initialized" type="error">
+  A question with this `questionID` already exists.
+  
+  **Solution:** Each unique ancillary data + initializer combination can only be initialized once
+</ResponseField>
+
+## Events Emitted
+
+```solidity Event
+event QuestionInitialized(
+    bytes32 indexed questionID,
+    uint256 indexed requestTimestamp,
+    address indexed creator,
+    bytes ancillaryData,
+    address rewardToken,
+    uint256 reward,
+    uint256 proposalBond
+);
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Clear Questions" icon="message-question">
+    Write unambiguous ancillary data with:
+    - Specific outcome criteria
+    - Resolution data source
+    - Timestamp boundaries
+  </Card>
+  
+  <Card title="Economic Security" icon="shield-check">
+    Size rewards and bonds proportional to:
+    - Expected market volume
+    - Value at stake
+    - Resolution urgency
+  </Card>
+  
+  <Card title="Test Parameters" icon="flask">
+    Start with conservative values:
+    - Higher bonds
+    - Longer liveness
+    - Adequate rewards
+  </Card>
+  
+  <Card title="Approve Tokens" icon="circle-check">
+    Always approve token spending before calling `initialize()` if reward > 0
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<Card title="Resolving Markets" icon="check" href="/integration/resolving-markets">
+  Learn how to check market readiness and resolve questions
+</Card>
